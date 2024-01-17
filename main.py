@@ -13,9 +13,9 @@ device = 'cuda:0'
 W,H = 300,300
 dt = 0.1
 
-interesting_dir = 'data\interesting'
-remarkable_dir = 'data\remarkable'
-videos_dir = 'data\videos'
+interesting_dir = os.path.join('data','interesting')
+remarkable_dir = os.path.join('data','remarkable')
+videos_dir = os.path.join('data','videos')
 
 os.makedirs(interesting_dir, exist_ok=True)
 os.makedirs(remarkable_dir, exist_ok=True)
@@ -23,13 +23,16 @@ os.makedirs(videos_dir, exist_ok=True)
 
 interest_files = os.listdir(interesting_dir)
 
-file = random.choice(interest_files)
-p = load_params(os.path.join(interesting_dir,file), device=device)
-params = p[0]
-if p[1]:
-    params_d = p[2]
-    params_a = p[3]
-    t_crit = p[4]
+if len(interest_files) > 0:
+    file = random.choice(interest_files)
+    p = load_params(os.path.join(interesting_dir,file), device=device)
+    params = p[0]
+    if p[1]:
+        params_d = p[2]
+        params_a = p[3]
+        t_crit = p[4]
+else :
+    params = gen_params(device)
 
 
 # Initialize the automaton
@@ -37,8 +40,7 @@ auto = LeniaMC((W,H), dt, params, device=device)
 auto.to(device)
 kern = compute_ker(auto, device)
 
-print(auto.device)
-
+auto.update_params(params)
 # Initialize the pygame screen 
 pygame.init()
 font = pygame.font.SysFont('consolas',10)
@@ -54,20 +56,20 @@ world_state = np.random.randint(0,255,(W,H,3),dtype=np.uint8)
 
 updating = True
 
-Red = False
-Green = False
-Blue = False
-i = torch.tensor([0,1,2])
+# Red = False
+# Green = False
+# Blue = False
+# i = torch.tensor([0,1,2])
 
 n_steps = 0
 
 launch_video=True
 recording = False
 
-x,y = torch.meshgrid(torch.arange(0,W,device=device),torch.arange(0,H,device=device))
-left_dragging = False
-right_dragging = False
-paint_size = 2
+# x,y = torch.meshgrid(torch.arange(0,W,device=device),torch.arange(0,H,device=device))
+# left_dragging = False
+# right_dragging = False
+# paint_size = 2
 frame= 0
 
 chosen_interesting = 0
@@ -75,7 +77,6 @@ chosen_interesting = 0
 display_kernel = False
 
 
-#auto.update_params(load_params("ParamLoop\seed=9010333850255899677"))
 while running:
     # poll for events
     # pygame.QUIT event means the user clicked X to close your window
@@ -88,13 +89,18 @@ while running:
                 """ New random parameters"""
                 params = gen_params(device)
                 auto.update_params(params)
+                kern = compute_ker(auto, device) 
+
             if(event.key == pygame.K_u):
                 """ Variate around parameters"""
                 params = around_params(params, device)
                 auto.update_params(params)
                 kern = compute_ker(auto, device) 
             if(event.key == pygame.K_i):
-                auto.set_init_simplex()
+                auto.set_init_fractal()
+                n_steps=0
+            if(event.key == pygame.K_j):
+                auto.set_init_perlin()
                 n_steps=0
             if(event.key == pygame.K_m):
                 n_steps=0
@@ -137,54 +143,6 @@ while running:
                 recording = not recording
             if(event.key == pygame.K_DELETE):
                 auto.state = torch.zeros_like(auto.state)
-            # if(event.key == pygame.K_DOWN):
-            #     paint_size-=0.1
-            #     paint_size=max(0,paint_size)
-            # if(event.key ==pygame.K_UP):
-            #     paint_size+=0.1
-            # if(event.key==pygame.K_r):
-            #     Red = True
-            #     Green = False
-            #     Blue = False
-            # if(event.key==pygame.K_g):
-            #     Green = True
-            #     Red = False
-            #     Blue = False
-            # if(event.key==pygame.K_b):
-            #     Blue = True
-            #     Red = False
-            #     Green = False
-        # if event.type == pygame.MOUSEBUTTONDOWN :
-        #         if event.button == pygame.BUTTON_LEFT:  # If left mouse button pressed
-        #             left_dragging = True
-        #         if event.button == pygame.BUTTON_RIGHT :
-        #             right_dragging = True
-        # elif event.type == pygame.MOUSEBUTTONUP:
-        #     if event.button == pygame.BUTTON_LEFT:  # If left mouse button released
-        #         left_dragging = False
-        #     if event.button == pygame.BUTTON_RIGHT :
-        #         right_dragging = False
-        # elif event.type == pygame.MOUSEMOTION :
-        #     if(left_dragging or right_dragging):
-        #         (w,h) = event.pos
-        #         dist = ((x-h)**2+(y-w)**2).to(torch.float)
-        #     if(left_dragging):
-        #         t = torch.where(dist<paint_size*((auto.k_size-1)),0.5*torch.rand_like(dist,device=device),0)
-        #         t=t[None].repeat(3,1,1)
-        #         if Red:
-        #             t[1] = torch.zeros_like(t[1])
-        #             t[2] = torch.zeros_like(t[2])
-        #             auto.state=torch.clamp(auto.state+t,0,1)
-        #         if Green:
-        #             t[2] = torch.zeros_like(t[2])
-        #             t[0] = torch.zeros_like(t[0])
-        #             auto.state=torch.clamp(auto.state+t,0,1)
-        #         if Blue:
-        #             t[1] = torch.zeros_like(t[1])
-        #             t[0] = torch.zeros_like(t[0])
-        #             auto.state=torch.clamp(auto.state+t,0,1)
-        #     if(right_dragging):
-        #         auto.state=torch.where(dist<paint_size*((auto.k_size-1)),0,auto.state)
 
         # Handle the event loop for the camera
         camera.handle_event(event)
@@ -225,7 +183,7 @@ while running:
     # Clear the screen 
     screen.fill((0, 0, 0))
 
-    m = [f"{x.item(): .2f}" for x in auto.mean_mass()]
+    m = [f"{x.item(): .2f}" for x in auto.mass()]
     # cent = auto.centroid()
     # print(cent[0])
     # cent = [f"({y[0].item(): .2f}, {y[1].item(): .2f})" for y in auto.centroid().transpose(0,1)]  

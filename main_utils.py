@@ -28,10 +28,27 @@ def gen_params(device):
         'k_size' : 25, 
         'mu':  mu ,
         'sigma' : sigma,
-        'beta' : torch.rand((3,3,1), device=device),
-        'mu_k' : torch.rand((3,3,1), device=device),
-        'sigma_k' : torch.rand((3,3,1), device=device),
+        'beta' : torch.rand((3,3,3), device=device),
+        'mu_k' : torch.rand((3,3,3), device=device),
+        'sigma_k' : torch.rand((3,3,3), device=device),
         'weights' : torch.rand((3,3), device = device) # element i, j represents contribution from channel i to channel j
+    }
+    return params
+
+def gen_batch_params(batch_size,device='cpu'):
+    """ Generates batch parameters."""
+    mu = torch.rand((batch_size,3,3), device=device)
+    sigma = mu/(3*np.sqrt(2*np.log(2)))*(1+ (torch.ones_like(mu)-2*torch.rand_like(mu)))
+        
+
+    params = {
+        'k_size' : 25, 
+        'mu':  mu ,
+        'sigma' : sigma,
+        'beta' : torch.rand((batch_size,3,3,3), device=device),
+        'mu_k' : torch.rand((batch_size,3,3,3), device=device),
+        'sigma_k' : torch.rand((batch_size,3,3,3), device=device),
+        'weights' : torch.rand((batch_size,3,3), device = device) # element i, j represents contribution from channel i to channel j
     }
     return params
 

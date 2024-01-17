@@ -1,52 +1,54 @@
 import torch
-import pygame
-from Camera import Camera
 from Automaton import *
-import cv2
-import pickle as pk
-import os
+import hashlib
+from time import time
 
-import numpy as np
-
-
-def extremum_finder(W, H, dt, N_steps, params_range, threshold,  device):
+@torch.no_grad()
+def phase_finder(W, H, dt, N_steps, params_generator, threshold,  device='cpu'):
     """
         Finds a set of parameter of dead automaton, and a set of parameters of an alive automaton.
+
+        Args:
+            W, H : width and height of the automaton 
+            dt : time step
+            N_steps : number of simulation steps before checking phase
+            params_generator : function which returns a set of parameters
+            threshold : threshold below which we say we have found a dead config
+            device : device on which to run the automaton
+
     """
-
-    ## Parameters to scan over
-
     stop_d = True
     stop_a = True
 
+    params = params_generator(device)
+    auto = LeniaMC((W,H), dt, params, device=device)
+    auto.to(device)
+
     while (stop_a or stop_d):
-        params = params_range()
         # Initialize the automaton
-        auto = LeniaMC((W,H), dt, params, device=device)
-        auto.to(device)
-
-        for j in range(N_steps):
-            # Step the automaton if we are updating
-            # THIS MIGHT BE CHANGED
-            with torch.no_grad():
-                auto.step()
-
-
-        if ((max(auto.mean_mass()) < threshold) and stop_d): 
+        t0 = time()
+        for _ in range(N_steps):
+            auto.step()
+        print('Simulation took : ', time()-t0)	
+        mass_f = auto.mass()
+        if ((max(mass_f) < threshold) and stop_d): 
             # f = open("multi_sort/dies/seed="+str(torch.seed()), "wb") 
             # pk.dump(params,f)
             # f.close()
             params_d = params
             stop_d=False
             print("Found dead")  
-        elif ((max(auto.mean_mass()) > threshold) and stop_a):
+        elif ((max(mass_f) > threshold) and stop_a):
             # f = open("multi_sort/lives/seed="+str(torch.seed()), "wb") 
             # pk.dump(params,f)
             # f.close()
             params_e = params
             stop_a=False
             print("Found alive")
-    
+
+        params = params_generator(device)
+        auto.update_params(params)
+        auto.set_init_perlin()
     return params_d, params_e
        
 
@@ -89,13 +91,24 @@ def interest_finder(W,H, dt, N_steps, params_d, params_a, refinement, threshold,
             # Step to get to the 'final' state
             auto.step()
         
-        if (max(auto.mean_mass()) < threshold): # Also put this value as parameter, and the same in both ifs
+        if (max(auto.mass()) < threshold): # Also put this value as parameter, and the same in both ifs
             p1 = params
             t_crit += 0.5**(i+2)
-        elif(max(auto.mean_mass()) > threshold):
+        elif(max(auto.mass()) > threshold):
             p2 = params
             t_crit -= 0.5**(i+2)
     #print("Interest found !")
 
     return t_crit
-              
+
+
+def hash_dict(d):
+    """
+        Produces hash for dictionary parameters.
+    """
+    # Convert the dictionary into a sorted string
+    d_str = str(sorted(d.items())).encode('utf-8')
+    
+    # Use SHA-256 to hash the string and return the hexdigest
+    return hashlib.sha256(d_str).hexdigest()[:8]
+

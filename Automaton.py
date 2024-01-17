@@ -1,17 +1,12 @@
-import torch
-import torch.nn
-import torch.nn.functional as F
-import torchvision.transforms as tt
+import torch,torch.nn,torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy as sp
-from visualize import showTens
+from torchenhanced.util import showTens
 from torchenhanced import DevModule
-from ReintegrationTracking import *
 # from compute_kernel import compute_kernel
 import matplotlib.pyplot as plt
 from noise_gen import perlin,perlin_fractal
-import random
 
 
 class Automaton(DevModule) :
@@ -48,8 +43,6 @@ class Automaton(DevModule) :
     @property
     def worldmap(self):
         return (255*self._worldmap).astype(dtype=np.uint8)
-
-
 
 class ConwayGoL(Automaton):
     """
@@ -112,22 +105,17 @@ class LeniaMC(Automaton):
         self.k_size = params['k_size'] # kernel sizes (same for all)
 
         self.register_buffer('state',torch.rand((3,self.h,self.w)))
-        
 
         if(state_init is None):
-            self.set_init_simplex()
+            self.set_init_fractal()
         else:
             self.state = state_init.to(self.device)
 
-        # f = open("ParamLoop\cond_init_flower", 'rb') # initialize a single static flower (only seed =9010333850255899677")
-        # cond_init = pk.load(f)
-        # f.close()
-        # self.state = cond_init
-
         self.dt = dt
-        self.mu = params['mu'] # mean of the growth functions (3,3)
-        self.sigma = params['sigma'] # standard deviation of the growths functions (3,3)
-        
+        # Buffer for all parameters since we do not require_grad for them :
+
+        self.register_buffer('mu', params['mu']) # mean of the growth functions (3,3)
+        self.register_buffer('sigma', params['sigma']) # standard deviation of the growths functions (3,3)
         self.register_buffer('beta',params['beta']) # max of the kernel rings (3,3, # of rings)
         self.register_buffer('mu_k',params['mu_k'])# mean of the kernel gaussians (3,3, # of rings)
         self.register_buffer('sigma_k',params['sigma_k'])# standard deviation of the kernel gaussians (3,3, # of rings)
@@ -179,16 +167,18 @@ class LeniaMC(Automaton):
         return params
 
 
-    def set_init_simplex(self):
+    def set_init_fractal(self):
         """
             Sets the initial state of the automaton using perlin noise
         """
-        ## Change to fractal noise tomorrow
-        self.state = perlin_fractal((self.h,self.w),self.k_size*2,device=self.device)    
-        
+        self.state = perlin_fractal((1,self.h,self.w),int(self.k_size*1.5),device=self.device,black_prop=0.25,persistence=0.4)[0]    
+    
+    def set_init_perlin(self,wavelength=None):
+        if(not wavelength):
+            wavelength = self.k_size
+        self.state = perlin((1,self.h,self.w),[wavelength]*2,device=self.device,black_prop=0.25)[0]
 
-    def Kernel_slice(self, r): # r : (k_size,k_size)
-        # Rename function to something like 'kernel_slice'
+    def kernel_slice(self, r): # r : (k_size,k_size)
         """
             Given a distance matrix r, computes the kernel of the automaton.
 
@@ -217,29 +207,23 @@ class LeniaMC(Automaton):
             Computes the kernel given the parameters.
         """
         xyrange = torch.arange(-1, 1+0.00001, 2/(self.k_size-1)).to(self.device)
-        X,Y = torch.meshgrid(xyrange, xyrange)
+        X,Y = torch.meshgrid(xyrange, xyrange,indexing='ij')
         r = torch.sqrt(X**2+Y**2)
 
-        K = self.Kernel_slice(r) #(3,3,k_size,k_size)
+        K = self.kernel_slice(r) #(3,3,k_size,k_size)
 
-
-        # To normalize the kernel
-        Sum = torch.sum(K, dim = (2,3), keepdim=True) #(3,3,1,1)
+        # Normalize the kernel
+        summed = torch.sum(K, dim = (2,3), keepdim=True) #(3,3,1,1)
 
         # Avoid divisions by 0
-        Sum = torch.where(Sum<1e-6,1,Sum)
-        K /= Sum
-
-        #assert (K.sum(dim=(2,3))-torch.ones_like(K.sum(dim=(2,3)))<1e-6).all()
-
+        summed = torch.where(summed<1e-6,1,summed)
+        K /= summed
 
         return K #(3,3,k,k)
     
     def growth(self, u): # u:(3,3,H,W)
         """
             Computes the growth of the automaton given the concentration u.
-            <<<Would maybe worth storing the expanded mu and sigmas, not sure how
-            impactful they are on performance.>>>
 
             Args :
             u : (3,3,H,W) tensor of concentrations.
@@ -277,7 +261,7 @@ class LeniaMC(Automaton):
         weights = torch.where(N > 1.e-6, self.weights/N, 0)
         # print(weights)
         weights = weights [...,None, None]
-        weights = weights.expand(-1, -1, self.h,self.w)
+        weights = weights.expand(-1, -1, self.h,self.w) # 
 
         # print((U*weights).sum(dim=(2,3)))
         #print('Selfgrowth shape ', self.growth(U).shape)
@@ -315,18 +299,29 @@ class LeniaMC(Automaton):
 
         return torch.clamp(state + self.dt*dx, 0, 1)
     
+    def batch_evolve_state(self,states,num_steps):
+        """
+            Evolves a batch of states for a given number of steps.
+            Args :
+            states : (B,3,H,W) tensor, batch of states
+            num_steps : int, number of steps to evolve the states
+        """
+        B = states.shape[0]
+        kernel_eff = self.kernel.reshape([9,1,self.k_size,self.k_size])[None].expand(B,-1,-1,-1,-1)#(B,9,1,k,k)
 
-
+        U = F.pad(states, [(self.k_size-1)//2]*4, mode = 'circular') # (B,3,H+pad,W+pad)
+        U = F.conv2d(U, kernel_eff, groups=3).squeeze(0) #(9,H,W)
+        U = U.reshape(3,3,self.h,self.w)        
     def draw(self):
         """
             Draws the worldmap from state.
             Separate from step so that we can freeze time,
             but still 'paint' the state and get feedback.
-        """   
+        """
         
         toshow= self.state.permute((2,1,0)) #(W,H,3)
         W,H,_ = toshow.shape
-        #toshow = toshow.expand(-1,-1,3) #(W,H,3)
+        # toshow = toshow.expand(-1,-1,3) #(W,H,3)
         
         # toshow.reshape((H*W)) # (W*H*3)
 
@@ -339,62 +334,194 @@ class LeniaMC(Automaton):
         
     def mass(self):
         """
-            Computes total 'mass' of the automaton
-            <<<SHOULD CHANGE IT TO OUTPUT AVERAGE MASS, simply change sum to mean.
+            Computes average 'mass' of the automaton for each channel
+
             returns :
             mass : (3,) tensor, mass of each channel
         """
-        mass_r = self.state[0].sum()
-        mass_g = self.state[1].sum()
-        mass_b = self.state[2].sum()
 
-        return torch.tensor([mass_r, mass_g, mass_b], device = self.device) 
-    
-    def mean_mass(self):
         return self.state.mean(dim=(1,2)) # (3, ) mean mass for each color
+       
+class BatchLeniaMC(DevModule):
+    """
+        Batched Multi-channel lenia, to run B worlds in parallel !
 
-    def centroid(self):
-        xrange =torch.arange(0, self.w, 1, device=self.device)
-        yrange =torch.arange(0, self.h, 1, device=self.device)
-
-        X,Y = torch.meshgrid(xrange, yrange)
-        mass_r = self.state[0].sum()
-        mass_g = self.state[1].sum()
-        mass_b = self.state[2].sum()
-        m = torch.tensor([mass_r, mass_g, mass_b], device = self.device)
-
-        c_x = (X[None]*self.state).sum((1,2))/m # (3)
-        c_y = (Y[None]*self.state).sum((1,2))/m # (3)
-
-        return torch.cat((c_x[None], c_y[None]), 0)
+        Args :
+        size : (B,H,W) of ints, size of the automaton and number of batches
+        dt : time-step used when computing the evolution of the automaton
+        params : dict of tensors containing the parameters.
+            keys-values : 
+            'k_size' : odd int, size of kernel used for computations
+            'mu' : (B,3,3) tensor, mean of growth functions
+            'sigma' : (B,3,3) tensor, standard deviation of the growth functions
+            'beta' :  (B,3,3, # of rings) float, max of the kernel rings 
+            'mu_k' : (B,3,3, # of rings) [0,1.], location of the kernel rings
+            'sigma_k' : (B,3,3, # of rings) float, standard deviation of the kernel rings
+            'weights' : (B,3,3) float, weights for the growth weighted sum
+        device : str, device 
+    """
     
-    def plot_concentration(self):
-        """
-            Plots the concentration (amount of stuff) of the automaton along x and y
-        """
-        fig, (ax1,ax2) = plt.subplots(1,2)
-        C = torch.sum(self.state, dim =0) # (H,W)
-        C = C.cpu()
-        print(C.shape)
+    def __init__(self, size, dt, params, state_init = None, device='cpu' ):
+        super().__init__()
+        self.to(device)
 
-        ax1.plot(range(self.w), C[int(np.floor(self.h/2)), :] )
-        ax1.set_title("Concentration along x")
-        ax2.plot(range(self.h), C[:, int(np.floor(self.w/2))] )
-        ax2.set_title("Concentration along y")
+        self.batch= size[0]
+        self.w, self.h  = size[1:]
+        # 0,1,2,3 of the first dimension are the N,W,S,E directions
+        self.k_size = params['k_size'] # kernel sizes (same for all)
 
-        plt.show()
+        self.register_buffer('state',torch.rand((self.batch,3,self.h,self.w)))
 
-    def get_erf(self):
+        if(state_init is None):
+            self.set_init_fractal()
+        else:
+            self.state = state_init.to(self.device)
+
+        self.dt = dt
+        # Buffer for all parameters since we do not require_grad for them :
+
+        self.register_buffer('mu', params['mu']) # mean of the growth functions (3,3)
+        self.register_buffer('sigma', params['sigma']) # standard deviation of the growths functions (3,3)
+        self.register_buffer('beta',params['beta']) # max of the kernel rings (3,3, # of rings)
+        self.register_buffer('mu_k',params['mu_k'])# mean of the kernel gaussians (3,3, # of rings)
+        self.register_buffer('sigma_k',params['sigma_k'])# standard deviation of the kernel gaussians (3,3, # of rings)
+        self.register_buffer('weights',params['weights']) # raw weigths for the growth weighted sum (3,3)
+
+        self.norm_weights()
+        self.register_buffer('kernel',torch.zeros((self.k_size,self.k_size)))
+        self.kernel = self.compute_kernel() # (3,3,h, w)
+
+
+    def update_params(self, params):
         """
-            <<<Not sure what this does, I don't remember...>>>
+            Updates the parameters of the automaton.
         """
-        erf = []
-        for i in range(3):
-            for j in range(3):
-                mu = self.mu[i][j].item()
-                sigma = self.sigma[i][j].item()
-                erf.append(2*np.sqrt(np.pi/2)*sigma*(sp.special.erf((1-mu)/(np.sqrt(2)*sigma)) - sp.special.erf(-mu/(np.sqrt(2)*sigma)))-1)
-        return torch.tensor(erf, device = self.device)*torch.cat((self.weights[0], self.weights[0], self.weights[0]), 0)
-     
-     
+        self.mu = params['mu'] # mean of the growth functions (3,3)
+        self.sigma = params['sigma'] # standard deviation of the growths functions (3,3)
+        self.beta = params['beta']
+        self.mu_k = params['mu_k']
+        self.sigma_k = params['sigma_k']
+        self.weights = params['weights']
+        self.norm_weights()
+        self.kernel = self.compute_kernel() # (B,3,3,h, w)
+
+    def norm_weights(self):
+        # Normalizing the weights
+        N = self.weights.sum(dim=0, keepdim = True)
+        self.weights = torch.where(N > 1.e-6, self.weights/N, 0)
+
+
+
+    def get_params(self):
+        """
+            Get the parameter dictionary which defines the automaton
+        """
+        params = dict(mu = self.mu, sigma = self.sigma, beta = self.beta,
+                       mu_k = self.mu_k, sigma_k = self.sigma_k, weights = self.weights)
         
+        return params
+
+
+    def set_init_fractal(self):
+        """
+            Sets the initial state of the automaton using perlin noise
+        """
+        self.state = perlin_fractal((self.batch,self.h,self.w),int(self.k_size*1.5),
+                                    device=self.device,black_prop=0.25,persistence=0.4) 
+    
+    def set_init_perlin(self,wavelength=None):
+        if(not wavelength):
+            wavelength = self.k_size
+        self.state = perlin((self.batch,self.h,self.w),[wavelength]*2,
+                            device=self.device,black_prop=0.25)
+
+    def kernel_slice(self, r): # r : (k_size,k_size)
+        """
+            Given a distance matrix r, computes the kernel of the automaton.
+
+            Args :
+            r : (k_size,k_size), value of the radius for each location around the center of the kernel
+        """
+
+        r = r[None, None, None,None] #(1,1, 1, 1, k_size, k_size)
+        r = r.expand(self.batch,3,3,self.mu_k[0][0].size()[0],-1,-1) #(B,3,3,#of rings,k_size,k_size)
+
+        mu_k = self.mu_k[..., None, None] # (B,3,3,#of rings,1,1)
+        sigma_k = self.sigma_k[..., None, None]# (B,3,3,#of rings,1,1)
+
+        K = torch.exp(-((r-mu_k)/2)**2/sigma_k) #(B,3,3,#of rings,k_size,k_size)
+        #print(K.shape)
+
+        beta = self.beta[..., None, None] # (B,3,3,#of rings,1,1)
+
+        K = torch.sum(beta*K, dim = 2)
+
+        
+        return K #(B,3,3,k_size, k_size)
+    
+    def compute_kernel(self):
+        """
+            Computes the kernel given the parameters.
+        """
+        xyrange = torch.arange(-1, 1+0.00001, 2/(self.k_size-1)).to(self.device)
+        X,Y = torch.meshgrid(xyrange, xyrange,indexing='ij')
+        r = torch.sqrt(X**2+Y**2)
+
+        K = self.kernel_slice(r) #(B,3,3,k_size,k_size)
+
+        # Normalize the kernel
+        summed = torch.sum(K, dim = (-1,-2), keepdim=True) #(B,3,3,1,1)
+
+        # Avoid divisions by 0
+        summed = torch.where(summed<1e-6,1,summed)
+        K /= summed
+
+        return K #(B,3,3,k,k)
+    
+    def growth(self, u): # u:(B,3,3,H,W)
+        """
+            Computes the growth of the automaton given the concentration u.
+
+            Args :
+            u : (B,3,3,H,W) tensor of concentrations.
+        """
+
+        # Possibly in the future add other growth function using bump instead of guassian
+        mu = self.mu[..., None, None] # (B,3,3,1,1)
+        sigma = self.sigma[...,None,None] # (B,3,3,1,1)
+        mu = mu.expand(-1,-1,-1, self.h, self.w) # (B,3,3,H,W)
+        sigma = sigma.expand(-1,-1,-1, self.h, self.w) # (B,3,3,H,W)
+
+        return 2*torch.exp(-((u-mu)/(sigma))**2/2)-1 #(B,3,3,H,W)
+
+
+    def step(self):
+        """
+            Steps the automaton state by one iteration.
+        """
+        # Shenanigans to make all the convolutions at once.
+        kernel_eff = self.kernel.reshape([self.batch*9,1,self.k_size,self.k_size])#(B*9,1,k,k)
+
+        U = self.state.reshape(1,self.batch*3,self.h,self.w) # (1,B*3,H,W)
+        U = F.pad(U, [(self.k_size-1)//2]*4, mode = 'circular') # (1,B*3,H+pad,W+pad)
+        
+        U = F.conv2d(U, kernel_eff, groups=3*self.batch).squeeze(0) #(1,B*9,H,W) squeeze to (B*9,H,W)
+        U = U.reshape(self.batch,3,3,self.h,self.w) # (B,3,3,H,W)
+
+        assert (self.h,self.w) == (self.state.shape[2], self.state.shape[3])
+        
+        weights = self.weights [...,None, None] # (B,3,3,1,1)
+        weights = weights.expand(-1,-1, -1, self.h,self.w) # (B,3,3,H,W)
+
+        dx = (self.growth(U)*weights).sum(dim=1) #(B,3,H,W)
+
+        self.state = torch.clamp(self.state + self.dt*dx, 0, 1)     
+    def mass(self):
+        """
+            Computes average 'mass' of the automaton for each channel
+
+            returns :
+            mass : (B,3) tensor, mass of each channel
+        """
+
+        return self.state.mean(dim=(-1,-2)) # (B,3) mean mass for each color
