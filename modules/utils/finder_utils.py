@@ -1,7 +1,7 @@
-import torch
-from Automaton import *
-import hashlib
+import torch, hashlib
 from time import time
+
+
 
 @torch.no_grad()
 def phase_finder(W, H, dt, N_steps, params_generator, threshold,  device='cpu'):
@@ -17,6 +17,7 @@ def phase_finder(W, H, dt, N_steps, params_generator, threshold,  device='cpu'):
             device : device on which to run the automaton
 
     """
+    from ..Automaton import LeniaMC
     stop_d = True
     stop_a = True
 
@@ -51,7 +52,6 @@ def phase_finder(W, H, dt, N_steps, params_generator, threshold,  device='cpu'):
         auto.set_init_perlin()
     return params_d, params_e
        
-
 @torch.no_grad()
 def interest_finder(W,H, dt, N_steps, params_d, params_a, refinement, threshold, device):
     """
@@ -68,6 +68,7 @@ def interest_finder(W,H, dt, N_steps, params_d, params_a, refinement, threshold,
             params_a : parameters of an alive automaton  (dict)
             refinement : number of iterations of dichotomy
     """
+    from ..Automaton import LeniaMC
     p1 = params_d
     p2 = params_a
     t_crit = 0.5

@@ -1,6 +1,6 @@
 import torch,os, pickle as pk, numpy as np
-from Automaton import LeniaMC
-from finder_utils import *
+from modules import LeniaMC
+import modules.utils.finder_utils as f_utils
 from tqdm import tqdm
 import math
 
@@ -9,7 +9,7 @@ import math
     Finds first a dead and an alive automaton, then finds the parameters of the transition in between those.
 """
 
-folder_save = './Data/test_Search/'
+folder_save = './Data/test_search/'
 
 os.makedirs(folder_save, exist_ok=True)
 
@@ -54,14 +54,16 @@ def param_generator(device):
 # Generates num_trans phase transition points
 for i in tqdm(range(num_trans),total=num_trans):
     # find two sets of parameters (one dead one alive)
-    params_d, params_a = phase_finder(W,H, dt, N_steps, param_generator, threshold_e, device) 
+    params_d, params_a = f_utils.phase_finder(W,H, dt, N_steps, param_generator, threshold_e, device) 
 
+    print('param_d before : ', params_d)
     # Find critial point on line connecting them
-    t_crit = interest_finder(W,H, dt, N_steps, params_d, params_a, refinement, threshold_i, device) 
+    t_crit = f_utils.interest_finder(W,H, dt, N_steps, params_d, params_a, refinement, threshold_i, device) 
 
+    print('param_d after : ', params_d)
     dict_out = {'params_d' : params_d, 'params_a' : params_a, 't_crit' : t_crit}
 
-    name = hash_dict(dict_out)
+    name = f_utils.hash_dict(dict_out)
     f = open(os.path.join(folder_save,name+'.pk'), "wb") 
     pk.dump(dict_out,f)
     f.close() 

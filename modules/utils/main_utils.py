@@ -1,5 +1,4 @@
 import torch
-from Automaton import *
 import pickle as pk
 
 import numpy as np
@@ -82,7 +81,8 @@ def load_params(file, device):
     dico = pk.load(f)
     f.close()
 
-    if len(dico) > 3: # discrimininates between param files before/after LeniaFinder update 
+    if len(dico) > 3: 
+        # Pure parameter dictionary
         params = {
             'k_size' : 25,
             'mu' : dico['mu'].to(device),
@@ -93,17 +93,16 @@ def load_params(file, device):
             'weights' : dico['weights'].to(device)
         }
 
-        exploring = False
-        return params, exploring
-
+        return params
     else :
+        # Dead/Live t_crit parameter
         params_d = dico['params_d']
         params_a = dico['params_a']
         t_crit = dico['t_crit']
-        exploring = True 
-        # Use param sum
+        # Compute critical
         params = sum_params(params_a, params_d, t_crit, device)
-        return params, exploring, params_d, params_a, t_crit
+
+        return params
     
 def compute_ker(auto, device):
     kern = auto.compute_kernel().permute((0,3,2,1))

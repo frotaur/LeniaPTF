@@ -1,8 +1,8 @@
 import torch
 import pygame
-from Camera import Camera
-from Automaton import *
-from main_utils import *
+from modules.Camera import Camera
+from modules.Automaton import *
+from modules.utils.main_utils import *
 import cv2
 import pickle as pk
 import scipy as sp
@@ -13,7 +13,7 @@ device = 'cuda:0'
 W,H = 300,300
 dt = 0.1
 
-interesting_dir = os.path.join('data','interesting')
+interesting_dir = os.path.join('data','paper_search','individual')
 remarkable_dir = os.path.join('data','remarkable')
 videos_dir = os.path.join('data','videos')
 
@@ -25,12 +25,7 @@ interest_files = os.listdir(interesting_dir)
 
 if len(interest_files) > 0:
     file = random.choice(interest_files)
-    p = load_params(os.path.join(interesting_dir,file), device=device)
-    params = p[0]
-    if p[1]:
-        params_d = p[2]
-        params_a = p[3]
-        t_crit = p[4]
+    params = load_params(os.path.join(interesting_dir,file), device=device)
 else :
     params = gen_params(device)
 
@@ -38,9 +33,9 @@ else :
 # Initialize the automaton
 auto = LeniaMC((W,H), dt, params, device=device)
 auto.to(device)
+auto.update_params(params)
 kern = compute_ker(auto, device)
 
-auto.update_params(params)
 # Initialize the pygame screen 
 pygame.init()
 font = pygame.font.SysFont('consolas',10)
@@ -90,7 +85,6 @@ while running:
                 params = gen_params(device)
                 auto.update_params(params)
                 kern = compute_ker(auto, device) 
-
             if(event.key == pygame.K_u):
                 """ Variate around parameters"""
                 params = around_params(params, device)
@@ -109,12 +103,8 @@ while running:
                 chosen_interesting = (chosen_interesting+1)%len(interest_files)
 
                 print('loaded ', os.path.join(interesting_dir,file))
-                p = load_params(os.path.join(interesting_dir,file))
-                params = p[0]
-                if p[1]:
-                    params_d = p[2]
-                    params_a = p[3]
-                    t_crit = p[4]
+                params = load_params(os.path.join(interesting_dir,file),device=device)
+
                 auto.update_params(params)
                 kern = compute_ker(auto, device) 
             if(event.key == pygame.K_s):
