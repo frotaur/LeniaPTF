@@ -1,7 +1,7 @@
 import torch, hashlib
 from ..Automaton import BatchLeniaMC
 from time import time
-import copy
+import copy, os, pickle as pk
 from tqdm import tqdm
 from math import ceil
 
@@ -54,11 +54,12 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
         for _ in range(N_steps):
             auto.step()
         print('Simulation took : ', time()-t0)	
-        mass_f = auto.mass() #  (B,3)
-        dead_mask = mass_f.max(dim=1).values < threshold # (B,) True if dead
+        mass_f = auto.mass().max(dim=1).values #  (B,3)
+        dead_mask = mass_f < threshold # (B,) True if dead
         num_d = dead_mask.sum().item() # Number of dead examples in batch
         num_a = (~dead_mask).sum().item()
-
+        print('Dead masses : ', mass_f[dead_mask])
+        print('Alive masses : ', mass_f[~dead_mask])
         print(f'Found {num_d} dead and {num_a} alive')
         dead_add = min(num_examples-n_dead,num_d) # Number of dead examples to keep to reach num_examples
         alive_add = min(num_examples-n_alive,num_a) # Number of alive examples to keep to reach num_examples
@@ -175,6 +176,7 @@ def mean_params(p1,p2):
     
     return new_p
 
+
 def hash_dict(d):
     """
         Produces hash for dictionary parameters.
@@ -197,7 +199,7 @@ def param_batch_to_list(b_params,new_batch_size=1,squeeze=True):
         Returns:
             list of batched parameters list[dict]
     """
-    if(new_batch_size>=b_params['mu'].shape[0]):
+    if(new_batch_size>=b_params['mu'].shape[0] and not squeeze):
         return [b_params]
 
     batch_size = b_params['mu'].shape[0]
@@ -235,3 +237,35 @@ def expand_batch(param,tar_batch):
             new_param[key] = param[key].repeat(tar_batch,*([1]*n_d))
     
     return new_param
+
+def save_param(batch_folder,indiv_folder,params):
+    """
+        Saves parameter both in batch and individually.
+
+        Returns : path to batch params.
+    """
+    name = hash_dict(params)
+    batch_size = params['mu'].shape[0]
+
+    if(batch_size>1):
+        f = open(os.path.join(batch_folder,name+'.pk'), "wb") 
+        pk.dump(params,f) # Save the resulting parameter batch
+        f.close() 
+
+    mid_params_list = param_batch_to_list(params) # Unbatched list of dicts
+    for j in range(len(mid_params_list)):
+        f = open(os.path.join(indiv_folder,name[:-3]+f'{j:02d}'+'.pk'), "wb") 
+        pk.dump(mid_params_list[j],f)
+        f.close()
+    
+    return os.path.join(batch_folder,name+'.pk') 
+
+def save_rand(dir,batch_size,num,param_generator,device='cpu'):
+    dir_b = os.path.join(dir,'batch')
+    dir_i = os.path.join(dir,'individual')
+
+    os.makedirs(dir_b,exist_ok=True)
+    os.makedirs(dir_i,exist_ok=True)
+    for i in range(num):
+        params = param_generator(batch_size,device=device)
+        save_param(dir_b,dir_i,params)

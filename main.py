@@ -5,21 +5,32 @@ from modules.Automaton import *
 from modules.utils.main_utils import *
 import cv2
 import pickle as pk
-import scipy as sp
-
+from batch_finder import param_generator
+from modules.utils.b_finder_utils import param_batch_to_list
 import numpy as np, os, random
+from torchenhanced.util import showTens
 
 device = 'cuda:0'
-W,H = 300,300
+W,H = 600,600
 dt = 0.1
 
-interesting_dir = os.path.join('data','paper_search','individual')
+param_gen = lambda dev: param_batch_to_list(param_generator(1,device=dev))[0]
+
+a = param_gen(device)
+interesting_dir = os.path.join('data','latest')
 remarkable_dir = os.path.join('data','remarkable')
+random_dir = os.path.join('data','latest_rand')
+
+#===================================================================================================
+
 videos_dir = os.path.join('data','videos')
 
+interesting_dir = os.path.join(interesting_dir,'individual')
+remarkable_dir = os.path.join(remarkable_dir,'individual')
 os.makedirs(interesting_dir, exist_ok=True)
 os.makedirs(remarkable_dir, exist_ok=True)
 os.makedirs(videos_dir, exist_ok=True)
+os.makedirs(random_dir, exist_ok=True)
 
 interest_files = os.listdir(interesting_dir)
 
@@ -27,7 +38,7 @@ if len(interest_files) > 0:
     file = random.choice(interest_files)
     params = load_params(os.path.join(interesting_dir,file), device=device)
 else :
-    params = gen_params(device)
+    params = param_gen(device)
 
 
 # Initialize the automaton
@@ -82,8 +93,10 @@ while running:
         if event.type == pygame.KEYDOWN:
             if(event.key == pygame.K_n):
                 """ New random parameters"""
-                params = gen_params(device)
+                params = param_gen(device)
+                print('k_size_o : ', params['k_size'])
                 auto.update_params(params)
+                print('auto k_size : ', auto.k_size)
                 kern = compute_ker(auto, device) 
             if(event.key == pygame.K_u):
                 """ Variate around parameters"""
@@ -116,18 +129,11 @@ while running:
                 f.close() 
             if(event.key == pygame.K_p):
                 updating=not updating
-            if(event.key == pygame.K_RIGHT):
-                if p[1]:
-                    t_crit -= 0.01
-                    params = sum_params(params_a, params_d, t_crit)
-                    auto.update_params(params)
-            if(event.key == pygame.K_LEFT):
-                if p[1]:
-                    t_crit += 0.01
-                    params =  sum_params(params_a, params_d, t_crit)
-                    auto.update_params(params)
             if(event.key == pygame.K_k):
                 display_kernel = not display_kernel
+            if(event.key == pygame.K_l):
+                showTens(torch.einsum('chwd->cdhw',kern.cpu()))
+                print('k_size : ', auto.k_size)
             if(event.key == pygame.K_a):
                 release_video = True
                 recording = not recording
@@ -152,7 +158,6 @@ while running:
         world_state[:auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[0].cpu()
         world_state[auto.k_size:2*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[1].cpu()  
         world_state[2*auto.k_size:3*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern  [2].cpu()  
-        
 
     #Make the viewable surface.
     surface = pygame.surfarray.make_surface(world_state)
@@ -194,7 +199,8 @@ while running:
     # flip() the display to put your work on screen
 
     clock.tick(120)  # limits FPS to 60
-
+    if(torch.isnan(auto.state).any()):
+        print('NAN')
 
 if(not launch_video):
     video_out.release()

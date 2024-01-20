@@ -97,7 +97,7 @@ class LeniaMC(Automaton):
     def __init__(self, size, dt, params=None, state_init = None, device='cpu' ):
         super().__init__(size, device)
         if(params is None):
-            params = gen_params(self.batch,device)
+            params = gen_params(device)
         # 0,1,2,3 of the first dimension are the N,W,S,E directions
         self.k_size = params['k_size'] # kernel sizes (same for all)
 
@@ -142,6 +142,7 @@ class LeniaMC(Automaton):
             Updates the parameters of the automaton.
         """
         # Add kernel size
+        self.k_size = params['k_size'] # kernel sizes (same for all)
         # Possibly add class 'PArams' to hold all parameter and implement binary operators
         self.mu = params['mu'] # mean of the growth functions (3,3)
         self.sigma = params['sigma'] # standard deviation of the growths functions (3,3)
@@ -309,6 +310,7 @@ class LeniaMC(Automaton):
         U = F.pad(states, [(self.k_size-1)//2]*4, mode = 'circular') # (B,3,H+pad,W+pad)
         U = F.conv2d(U, kernel_eff, groups=3).squeeze(0) #(9,H,W)
         U = U.reshape(3,3,self.h,self.w)        
+
     def draw(self):
         """
             Draws the worldmap from state.
