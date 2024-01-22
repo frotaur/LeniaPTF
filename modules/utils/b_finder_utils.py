@@ -138,7 +138,7 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, d
     t_crit = torch.full((batch_size,),0.5,device=device)
     auto = BatchLeniaMC((batch_size,*size), dt ,device=device)
     auto.to(device)
-
+    print('Ksize : ', p_d['k_size'])
     for i in tqdm(range(refinement)):
         mid_params = mean_params(p_d,p_a)
 
@@ -211,6 +211,7 @@ def param_batch_to_list(b_params,new_batch_size=1,squeeze=True):
 
     for i in range(ceil(batch_size/new_batch_size)):
         param_list.append({'k_size' : b_params['k_size']})
+
         for key in b_params:
             if(key!='k_size'):
                 # Cut to (new_batch_size,*) and add to list

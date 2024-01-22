@@ -17,7 +17,7 @@ dt = 0.1
 param_gen = lambda dev: param_batch_to_list(param_generator(1,device=dev))[0]
 
 a = param_gen(device)
-interesting_dir = os.path.join('data','interestingj')
+interesting_dir = os.path.join('data','latest')
 remarkable_dir = os.path.join('data','remarkable')
 random_dir = os.path.join('data','latest_rand')
 

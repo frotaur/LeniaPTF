@@ -84,7 +84,7 @@ def load_params(file, device):
     if len(dico) > 3: 
         # Pure parameter dictionary
         params = {
-            'k_size' : 25,
+            'k_size' : dico['k_size'],
             'mu' : dico['mu'].to(device),
             'sigma' : dico['sigma'].to(device),
             'beta' : dico['beta'].to(device),

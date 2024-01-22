@@ -21,10 +21,10 @@ num_points = 40
 refinement = 8
 cross=False
 # threshold below which we say we have found a dead config in the initial search
-# threshold below which we say we have found a dead config in the initial search
-threshold_e = 0.05
+
+threshold_e = 0.03
 # threshold below which we say we have found a dead config in the dichotomy search (generally matches threshold_e)
-threshold_i = 0.05
+threshold_i = 0.03
 
 # Uncomment to use latest
 folder_save= 'data/latest'
@@ -61,11 +61,12 @@ def param_generator(batch_size,device='cpu'):
             # Relative sizes of kernel gaussians (l,i,j) represents the l'th ring contribution from channel i to channel j :
             'beta' : torch.rand((batch_size,3,3,3), device=device), 
             # Means of kernel gaussians (3 rings * 3 channels * 3 channels)
-            'mu_k' : torch.clamp(0.5+0.4*torch.randn((batch_size,3,3,3), device=device),min=0.,max=1.2), 
+            'mu_k' : torch.clamp(0.5+(0.5-torch.rand((batch_size,3,3,3), device=device)),min=0.,max=1.), 
             # Stds of kernel gaussians (3 rings * 3 channels * 3 channels)
-            'sigma_k' : 0.05*(1+torch.clamp(0.3*torch.randn((batch_size,3,3,3), device=device),min=-1)+1e-4),
+            # 'sigma_k' : 0.05*(1+torch.clamp(0.25*torch.randn((batch_size,3,3,3), device=device),min=-0.4)),
+            'sigma_k' : torch.clamp(0.08*torch.randn((batch_size,3,3,3), device=device),min=0.04),
             # Weighing of growth functions contribution to each channel
-            'weights' : torch.rand(batch_size,3,3,device=device)*(1-0.8*torch.diag(torch.ones(3,device=device))) 
+            'weights' : torch.rand(batch_size,3,3,device=device)#*(1-0.7*torch.diag(torch.ones(3,device=device))) 
             # 'weights' : torch.rand(batch_size,3,3,device=device)
         }
 
@@ -89,7 +90,7 @@ if __name__=='__main__':
     
     os.makedirs(batch_folder_save, exist_ok=True)
     os.makedirs(individual_folder_save, exist_ok=True)
-    batch_size = 20
+    batch_size = 40
 
     f_utils.save_rand('data/latest_rand',batch_size=batch_size,num=num_points,param_generator=param_generator,device=device)
 
