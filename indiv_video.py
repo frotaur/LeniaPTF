@@ -6,11 +6,11 @@ import torch
 from modules.utils.main_utils import load_params
 
 param_dir = 'data/latest/individual'
-out_dir = 'int_ln2_videos'
+out_dir = 'rand_int_torank'
 
 
-simulation_time = 1500
-size = 400,400
+simulation_time = 1800
+size = 500,500
 fps=120
 device='cuda:0'
 
@@ -25,7 +25,7 @@ param_names = [v.split('.')[0] for v in params]
 
 auto = LeniaMC(size,0.1,device=device)
 
-for i,p in tqdm(enumerate(params_paths)):
+for i,p in tqdm(enumerate(params_paths),total=len(params_paths)):
     auto.update_params(load_params(p,device=device))
     auto.set_init_perlin()
 

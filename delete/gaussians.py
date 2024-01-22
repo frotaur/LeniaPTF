@@ -3,14 +3,14 @@ import matplotlib.pyplot as plt
 
 # Define the Gaussian function
 def gaussian(x, mean, std,beta=1):
-    return (beta / (std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mean) / std) ** 2)
+    return (beta  * np.exp(-0.5 * ((x - mean) / std) ** 2))
 
 # Define the x values
 x = np.linspace(0, 1, 400)
 
 # Parameters for the three Gaussians
 means = [0.2]
-stds = [0.04]
+stds = [0.01]
 betas = [1]
 # Sum of the three Gaussians
 y = 2*gaussian(x, means[0], stds[0])-1 

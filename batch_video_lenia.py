@@ -80,10 +80,10 @@ if __name__=='__main__':
 
     # batch_files = os.listdir('data/paper_search/batch')
     # batch_params = [os.path.join('data/paper_search/batch',f) for f in batch_files]
-    location = 'data/random/batch'
+    location = 'data/latest/batch'
     batch_files = os.listdir(location)
     batch_params = [os.path.join(location,f) for f in batch_files]
-    save_name = 'rando_ln2'
+    save_name = 'transi_rand'
 
     print('making a bunch of videos')
     for i,b_par in tqdm(enumerate(batch_params)):

@@ -54,7 +54,8 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
         for _ in range(N_steps):
             auto.step()
         print('Simulation took : ', time()-t0)	
-        mass_f = auto.mass().max(dim=1).values #  (B,3)
+        # mass_f = auto.mass().max(dim=1).values #  (B,)
+        mass_f = auto.mass().mean(dim=1) #  (B,)
         dead_mask = mass_f < threshold # (B,) True if dead
         num_d = dead_mask.sum().item() # Number of dead examples in batch
         num_a = (~dead_mask).sum().item()
@@ -151,7 +152,8 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, d
         print('Simulation took : ', time()-t0)
         mass_f = auto.mass() #  (B,3)
 
-        dead_mask = (mass_f.max(dim=1).values < threshold) # (B,) True if dead
+        # dead_mask = (mass_f.max(dim=1).values < threshold) # (B,) True if dead
+        dead_mask = mass_f.mean(dim=1) < threshold # (B,) True if dead
         print('Adjusting...')
         for key,mid_param in mid_params.items():
             if(key!='k_size'):
@@ -161,8 +163,8 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, d
                 t_crit[dead_mask] += 0.5**(i+2) # Move t_crit for dead
                 t_crit[~dead_mask] -= 0.5**(i+2) # Move t_crit for alive
 
-    mid_params = mean_params(p_d,p_a)
-
+    mid_params = p_a # Last push towards alive
+    
     return t_crit, mid_params
 
 

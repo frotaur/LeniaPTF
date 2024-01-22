@@ -190,7 +190,8 @@ class LeniaMC(Automaton):
         mu_k = self.mu_k[:,:,:, None, None]
         sigma_k = self.sigma_k[:,:,:, None, None]
 
-        K = torch.exp(-((r-mu_k)/2)**2/sigma_k) #(3,3,#of rings,k_size,k_size)
+        # K = torch.exp(-((r-mu_k)/2)**2/sigma_k) #(3,3,#of rings,k_size,k_size)
+        K = torch.exp(-((r-mu_k)/(sigma_k))**2/2) 
         #print(K.shape)
 
         beta = self.beta[:,:,:, None, None]
@@ -452,7 +453,7 @@ class BatchLeniaMC(DevModule):
         mu_k = self.mu_k[..., None, None] # (B,3,3,#of rings,1,1)
         sigma_k = self.sigma_k[..., None, None]# (B,3,3,#of rings,1,1)
 
-        K = torch.exp(-((r-mu_k)/2)**2/sigma_k) #(B,3,3,#of rings,k_size,k_size)
+        K = torch.exp(-((r-mu_k)/sigma_k)**2/2) #(B,3,3,#of rings,k_size,k_size)
         #print(K.shape)
 
         beta = self.beta[..., None, None] # (B,3,3,#of rings,1,1)
@@ -495,7 +496,7 @@ class BatchLeniaMC(DevModule):
         mu = mu.expand(-1,-1,-1, self.h, self.w) # (B,3,3,H,W)
         sigma = sigma.expand(-1,-1,-1, self.h, self.w) # (B,3,3,H,W)
 
-        return 2*torch.exp(-((u-mu)/(sigma))**2/2)-1 #(B,3,3,H,W)
+        return 2*torch.exp(-((u-mu)**2/(sigma)**2)/2)-1 #(B,3,3,H,W)
 
 
     def step(self):

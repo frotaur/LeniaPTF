@@ -17,7 +17,7 @@ dt = 0.1
 param_gen = lambda dev: param_batch_to_list(param_generator(1,device=dev))[0]
 
 a = param_gen(device)
-interesting_dir = os.path.join('data','latest')
+interesting_dir = os.path.join('data','interestingj')
 remarkable_dir = os.path.join('data','remarkable')
 random_dir = os.path.join('data','latest_rand')
 
@@ -94,9 +94,7 @@ while running:
             if(event.key == pygame.K_n):
                 """ New random parameters"""
                 params = param_gen(device)
-                print('k_size_o : ', params['k_size'])
                 auto.update_params(params)
-                print('auto k_size : ', auto.k_size)
                 kern = compute_ker(auto, device) 
             if(event.key == pygame.K_u):
                 """ Variate around parameters"""
@@ -183,16 +181,16 @@ while running:
     # print(cent[0])
     # cent = [f"({y[0].item(): .2f}, {y[1].item(): .2f})" for y in auto.centroid().transpose(0,1)]  
     # cent = [f"sig : {float(auto.sigma_k[random.randint(0,2),random.randint(0,2),random.randint(0,2)]):.2f} "]
-    # s = " ".join(m) + " " + " ".join(cent)
+    s = f'frames : {n_steps}'
     # s = str(erf[0])+str(erf[1])+str(erf[2]) + '\n'+str(erf[3])+str(erf[4])+str(erf[5]) + '\n'+str(erf[6])+str(erf[7])+str(erf[8])
-    # upMacro = font.render(s, False, (255,255,255), (0,0,0))
+    upMacro = font.render(s, False, (255,255,255), (0,0,0))
     
 
     # Draw the scaled surface on the window
     zoomed_surface = camera.apply(surface)
 
     screen.blit(zoomed_surface, (0,0))
-    # screen.blit(upMacro, (0,0))
+    screen.blit(upMacro, (0,0))
 
     # Update the screen
     pygame.display.flip()

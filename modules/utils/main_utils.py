@@ -62,13 +62,13 @@ def around_params(params,device):
     # Add clamp on dangerous parameters
     # Make variations proportional to current value
     p = {
-        'k_size' : 25,
-        'mu' : params['mu']*(1 + 0.01*torch.randn((3,3), device=device)),
-        'sigma' : torch.clamp(params['sigma']*(1 + 0.01*torch.randn((3,3), device=device)), 0, None),
-        'beta' : torch.clamp(params['beta']*(1 + 0.001*torch.randn((3,3,1), device=device)),0,1),
-        'mu_k' : params['mu_k']*(1 + 0.001*torch.randn((3,3,1), device=device)),
-        'sigma_k' : torch.clamp(params['sigma_k']*(1 + 0.001*torch.randn((3,3,1), device=device)), 0, None),
-        'weights' : params['weights']*(1+0.01*torch.randn((3,3), device = device))
+        'k_size' : params['k_size'],
+        'mu' : params['mu']*(1 + 0.02*torch.randn((3,3), device=device)),
+        'sigma' : torch.clamp(params['sigma']*(1 + 0.02*torch.randn((3,3), device=device)), 0, None),
+        'beta' : torch.clamp(params['beta']*(1 + 0.02*torch.randn((3,3,1), device=device)),0,1),
+        'mu_k' : params['mu_k']*(1 + 0.02*torch.randn((3,3,1), device=device)),
+        'sigma_k' : torch.clamp(params['sigma_k']*(1 + 0.02*torch.randn((3,3,1), device=device)), 0, None),
+        'weights' : params['weights']*(1+0.02*torch.randn((3,3), device = device))
     }
     return p
 
