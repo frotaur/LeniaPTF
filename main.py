@@ -11,7 +11,7 @@ import numpy as np, os, random
 from torchenhanced.util import showTens
 
 device = 'cuda:0'
-W,H = 600,600
+W,H = 800,800
 dt = 0.1
 
 param_gen = lambda dev: param_batch_to_list(param_generator(1,device=dev))[0]
@@ -181,7 +181,7 @@ while running:
     # print(cent[0])
     # cent = [f"({y[0].item(): .2f}, {y[1].item(): .2f})" for y in auto.centroid().transpose(0,1)]  
     # cent = [f"sig : {float(auto.sigma_k[random.randint(0,2),random.randint(0,2),random.randint(0,2)]):.2f} "]
-    s = f'frames : {n_steps}'
+    s = f'frames : {n_steps}, mass : {auto.mass().mean():.2f}'
     # s = str(erf[0])+str(erf[1])+str(erf[2]) + '\n'+str(erf[3])+str(erf[4])+str(erf[5]) + '\n'+str(erf[6])+str(erf[7])+str(erf[8])
     upMacro = font.render(s, False, (255,255,255), (0,0,0))
     

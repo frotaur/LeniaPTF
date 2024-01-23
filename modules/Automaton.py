@@ -175,7 +175,8 @@ class LeniaMC(Automaton):
         if(not wavelength):
             wavelength = self.k_size
         self.state = perlin((1,self.h,self.w),[wavelength]*2,device=self.device,black_prop=0.25)[0]
-
+        print('perlin k_size is :',wavelength)
+    
     def kernel_slice(self, r): # r : (k_size,k_size)
         """
             Given a distance matrix r, computes the kernel of the automaton.
@@ -407,6 +408,7 @@ class BatchLeniaMC(DevModule):
         self.mu_k = params['mu_k']
         self.sigma_k = params['sigma_k']
         self.weights = params['weights']
+        self.k_size = params['k_size'] # kernel sizes (same for all)
         self.norm_weights()
         self.kernel = self.compute_kernel() # (B,3,3,h, w)
 
@@ -438,7 +440,6 @@ class BatchLeniaMC(DevModule):
             wavelength = self.k_size
         self.state = perlin((self.batch,self.h,self.w),[wavelength]*2,
                             device=self.device,black_prop=0.25)
-
     def kernel_slice(self, r): # r : (k_size,k_size)
         """
             Given a distance matrix r, computes the kernel of the automaton.

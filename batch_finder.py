@@ -13,24 +13,23 @@ import math, pickle as pk, shutil
 folder_save = './data/paper_search'
 
 device = 'cuda:0'
-H,W = 150,150
+H,W = 200,200
 dt = 0.1
-N_steps = 800
+N_steps = 600
 
 num_points = 40
-refinement = 8
+refinement = 10
 cross=False
 # threshold below which we say we have found a dead config in the initial search
 
+# threshold below which we say we have found a dead config in the initial search
 threshold_e = 0.03
 # threshold below which we say we have found a dead config in the dichotomy search (generally matches threshold_e)
 threshold_i = 0.03
 
+use_mean = False
 # Uncomment to use latest
 folder_save= 'data/latest'
-
-
-
 
 def param_generator(batch_size,device='cpu'):
     """
@@ -51,8 +50,8 @@ def param_generator(batch_size,device='cpu'):
     # Std of the grow functions :
     # sigma = mu/(3*np.sqrt(2*np.log(2)))*(1+ (torch.ones_like(mu)-2*torch.rand_like(mu)))
     # sigma = (mu)/(np.sqrt(2*math.log(2)))*(1+torch.clamp(torch.randn((batch_size,3,3), device=device),min=-1+1e-3,max=2))
-    # sigma = 0.2*torch.rand((batch_size,3,3), device=device)+1e-4
-    sigma = mu/(np.sqrt(2*math.log(2)))*0.7*torch.rand((batch_size,3,3), device=device)+1e-4
+    sigma = 0.2*torch.rand((batch_size,3,3), device=device)+1e-4
+    # sigma = mu/(np.sqrt(2*math.log(2)))*0.7*torch.rand((batch_size,3,3), device=device)+1e-4
 
     params = {
             'k_size' : 31, 
@@ -61,18 +60,55 @@ def param_generator(batch_size,device='cpu'):
             # Relative sizes of kernel gaussians (l,i,j) represents the l'th ring contribution from channel i to channel j :
             'beta' : torch.rand((batch_size,3,3,3), device=device), 
             # Means of kernel gaussians (3 rings * 3 channels * 3 channels)
-            'mu_k' : torch.clamp(0.5+(0.5-torch.rand((batch_size,3,3,3), device=device)),min=0.,max=1.), 
+            'mu_k' : torch.clamp(0.5+0.3*torch.randn((batch_size,3,3,3), device=device),min=0.,max=1.2), 
             # Stds of kernel gaussians (3 rings * 3 channels * 3 channels)
-            # 'sigma_k' : 0.05*(1+torch.clamp(0.25*torch.randn((batch_size,3,3,3), device=device),min=-0.4)),
-            'sigma_k' : torch.clamp(0.08*torch.randn((batch_size,3,3,3), device=device),min=0.04),
+            'sigma_k' : 0.1*(1+torch.clamp(0.2*torch.randn((batch_size,3,3,3), device=device),min=-1)+1e-4),
             # Weighing of growth functions contribution to each channel
-            'weights' : torch.rand(batch_size,3,3,device=device)#*(1-0.7*torch.diag(torch.ones(3,device=device))) 
-            # 'weights' : torch.rand(batch_size,3,3,device=device)
+            # 'weights' : torch.rand(batch_size,3,3,device=device)*(1-0.8*torch.diag(torch.ones(3,device=device))) 
+            'weights' : torch.rand(batch_size,3,3,device=device)
         }
 
     return params
 
 
+# def param_generator(batch_size,device='cpu'):
+#     """
+#         Prior distribution on the parameters we generate. Can be modified to search in a different
+#         space.
+
+#         Args:
+#             batch_size : number of parameters to generate
+#             device : device on which to generate the parameters
+        
+#         Returns:
+#             dict of batched parameters
+#     """
+#     # Means of the growth functions :
+#     # mu = 0.7*torch.rand((batch_size,3,3), device=device) 
+#     mu = 0.7*torch.rand((batch_size,3,3), device=device) 
+    
+#     # Std of the grow functions :
+#     # sigma = mu/(3*np.sqrt(2*np.log(2)))*(1+ (torch.ones_like(mu)-2*torch.rand_like(mu)))
+#     # sigma = (mu)/(np.sqrt(2*math.log(2)))*(1+torch.clamp(torch.randn((batch_size,3,3), device=device),min=-1+1e-3,max=2))
+#     # sigma = 0.2*torch.rand((batch_size,3,3), device=device)+1e-4
+#     sigma = mu/(np.sqrt(2*math.log(2)))*0.7*torch.rand((batch_size,3,3), device=device)+1e-4
+
+#     params = {
+#             'k_size' : 31, 
+#             'mu':  mu ,
+#             'sigma' : sigma,
+#             # Relative sizes of kernel gaussians (l,i,j) represents the l'th ring contribution from channel i to channel j :
+#             'beta' : torch.rand((batch_size,3,3,3), device=device), 
+#             # Means of kernel gaussians (3 rings * 3 channels * 3 channels)
+#             'mu_k' : torch.clamp(0.5+0.3*torch.randn((batch_size,3,3,3), device=device),min=0.,max=1.), 
+#             # Stds of kernel gaussians (3 rings * 3 channels * 3 channels)
+#             'sigma_k' : 0.05*(1+torch.clamp(0.2*torch.randn((batch_size,3,3,3), device=device),min=-1)+1e-4),
+#             # Weighing of growth functions contribution to each channel
+#             'weights' : torch.rand(batch_size,3,3,device=device)*(1-0.8*torch.diag(torch.ones(3,device=device))) 
+#             # 'weights' : torch.rand(batch_size,3,3,device=device)
+#         }
+
+#     return params
 if __name__=='__main__':
     from time import time
     import math
@@ -90,7 +126,7 @@ if __name__=='__main__':
     
     os.makedirs(batch_folder_save, exist_ok=True)
     os.makedirs(individual_folder_save, exist_ok=True)
-    batch_size = 40
+    batch_size = 20
 
     f_utils.save_rand('data/latest_rand',batch_size=batch_size,num=num_points,param_generator=param_generator,device=device)
 
@@ -109,7 +145,7 @@ if __name__=='__main__':
             # find two batches of parameters (one dead one alive)
             params_d, params_a = \
                 f_utils.batch_phase_finder((H,W), dt, N_steps, batch_size=batch_size,params_generator=param_generator, 
-                                            threshold=threshold_e, num_examples=min(batch_size,num_each), device=device) 
+                                            threshold=threshold_e, num_examples=min(batch_size,num_each), use_mean=use_mean, device=device) 
             
             if(cross):
                 # Compute transition point between all pairs of parameters
@@ -122,7 +158,7 @@ if __name__=='__main__':
                     f_utils.save_param(batch_folder_save,individual_folder_save, mid_params)
             else:
                 t_crit, mid_params = f_utils.interest_finder((H,W), dt, N_steps, params_d, params_a, 
-                                                                refinement, threshold_i, device)
+                                                                refinement, threshold_i,use_mean=use_mean,device=device)
 
                 f_utils.save_param(batch_folder_save,individual_folder_save, mid_params)
 

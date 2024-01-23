@@ -6,7 +6,7 @@ from tqdm import tqdm
 from math import ceil
 
 @torch.no_grad()
-def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshold,num_examples=None,  device='cpu'):
+def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshold,num_examples=None, use_mean=True, device='cpu'):
     """
         Finds a set of parameter of dead automaton, and a set of parameters of an alive automaton.
 
@@ -18,13 +18,16 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
             threshold : threshold below which we say we have found a dead config
             num_examples: Number of params of each phase to find.
                 If None, generates batch_size//2 dead and batch_size//2 alive automata.
+            use_mean : if True, uses mean of mass_f to determine if dead or alive, else uses max
             device : device on which to run the automaton
         
         Returns: 2-uple (dead_params,alive_params)
             dead_params : Dictionary of pameters, batch_size is num_examples
             alive_params : Dictionary of pameters, batch_size is num_examples
     """
-
+    print('=====================================================')
+    print('FINDING DEAD AND ALIVE PHASES')
+    print('=====================================================')
     found_d = False
     found_a = False
     H,W = size
@@ -49,13 +52,16 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
         params = params_generator(batch_size,device) # Params for next run TODO : ACTUALLY PUT IT UP THERE
         auto.update_params(params)
         auto.set_init_perlin()
-
+        print('Auto k_size : ', auto.k_size)
         t0 = time()
         for _ in range(N_steps):
             auto.step()
         print('Simulation took : ', time()-t0)	
-        # mass_f = auto.mass().max(dim=1).values #  (B,)
-        mass_f = auto.mass().mean(dim=1) #  (B,)
+        if(use_mean):
+            mass_f = auto.mass().mean(dim=1) #  (B,)
+        else:
+            mass_f = auto.mass().max(dim=1).values #  (B,)
+        
         dead_mask = mass_f < threshold # (B,) True if dead
         num_d = dead_mask.sum().item() # Number of dead examples in batch
         num_a = (~dead_mask).sum().item()
@@ -107,7 +113,7 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
        
 
 @torch.no_grad()
-def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, device='cpu'):
+def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, mean_number=1, use_mean=True,device='cpu'):
     """
         By dichotomy, finds the parameters of an interesting automaton. By interesting, here
         we mean a set of parameters which lies at the transition between an asymptotically dead
@@ -121,6 +127,8 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, d
             device : device on which to run the automaton
             p_dead : batch of parameters of a dead automaton. Batch_size much match params_a  (dict)
             p_alive : batch of parameters of an alive automaton. Batch_size much match params_d  (dict)
+            mean_number : number of times we simulate each set of parameters to get a mean mass
+            use_mean : if True, uses mean of mass_f to determine if dead or alive, else uses max
             refinement : number of iterations of dichotomy
             threshold : threshold below which we say we have a dead config
         
@@ -128,7 +136,9 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, d
             t_crit : threshold for which we have a transition between dead and alive
             mid_params : parameters of the automaton at the transition
     """
+    print('=====================================================')
     print('Computing dichotomy on found phases')
+    print('=====================================================')
     p_d = copy.deepcopy(p_dead)
     p_a = copy.deepcopy(p_alive)
 
@@ -146,15 +156,25 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, d
         auto.set_init_perlin()
 
         print('Simulating...')
-        t0 = time()
-        for _ in range(N_steps):
-            auto.step()
-        print('Simulation took : ', time()-t0)
-        mass_f = auto.mass() #  (B,3)
+        mass_f = 0
+        for _ in range(mean_number):
+            t0 = time()
+            for _ in range(N_steps):
+                auto.step()
+            print('Simulation took : ', time()-t0)
+            final_mass = auto.mass() # (B,3)
 
-        # dead_mask = (mass_f.max(dim=1).values < threshold) # (B,) True if dead
-        dead_mask = mass_f.mean(dim=1) < threshold # (B,) True if dead
+            mass_f += final_mass
+
+        mass_f = mass_f/mean_number # (B,3)
+        if(use_mean):
+            dead_mask = mass_f.mean(dim=1) < threshold # (B,) True if dead
+        else:
+            dead_mask = (mass_f.max(dim=1).values < threshold) # (B,) True if dead
+        
         print('Adjusting...')
+        print(f'Step {i} masses : {mass_f.mean(dim=1)}')
+        print(f'Step {i} deadmask : {dead_mask}')
         for key,mid_param in mid_params.items():
             if(key!='k_size'):
                 p_d[key][dead_mask] = mid_param[dead_mask] # Move dead point
@@ -162,9 +182,10 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, d
                 
                 t_crit[dead_mask] += 0.5**(i+2) # Move t_crit for dead
                 t_crit[~dead_mask] -= 0.5**(i+2) # Move t_crit for alive
-
-    mid_params = p_a # Last push towards alive
-    
+    print('=====================================================')
+    # mid_params = p_a # Last push towards alive
+    print('dead at the end : ', dead_mask.sum().item()/batch_size)
+    print('=====================================================')
     return t_crit, mid_params
 
 
