@@ -113,7 +113,7 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
        
 
 @torch.no_grad()
-def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, mean_number=1, use_mean=True,device='cpu'):
+def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, use_mean=True,device='cpu'):
     """
         By dichotomy, finds the parameters of an interesting automaton. By interesting, here
         we mean a set of parameters which lies at the transition between an asymptotically dead
@@ -157,16 +157,13 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, m
 
         print('Simulating...')
         mass_f = 0
-        for _ in range(mean_number):
-            t0 = time()
-            for _ in range(N_steps):
-                auto.step()
-            print('Simulation took : ', time()-t0)
-            final_mass = auto.mass() # (B,3)
 
-            mass_f += final_mass
+        t0 = time()
+        for _ in range(N_steps):
+            auto.step()
+        print('Simulation took : ', time()-t0)
+        mass_f = auto.mass() # (B,3)
 
-        mass_f = mass_f/mean_number # (B,3)
         if(use_mean):
             dead_mask = mass_f.mean(dim=1) < threshold # (B,) True if dead
         else:

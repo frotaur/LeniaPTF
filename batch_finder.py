@@ -2,33 +2,35 @@
 """
     Script to run a batched search for transition regions, in between dead and alive phases.
     To use, choose the parameters on top, and potentially modify param_generator, then run the script.
-
-
 """
 import torch,os, numpy as np
 import modules.utils.b_finder_utils as f_utils
 import math, pickle as pk, shutil
 
 
+#============================== PARAMETERS ==========================================================
+
+# Where to save the found parameters
 folder_save = './data/paper_search'
 
 device = 'cuda:0'
-H,W = 200,200
-dt = 0.1
-N_steps = 600
+H,W = 200,200 # Size of the automaton
+dt = 0.1 # Time step size
+N_steps = 500 # Number of steps to run the automaton for
 
-num_points = 40
-refinement = 10
-cross=False
-# threshold below which we say we have found a dead config in the initial search
+num_points = 36 # Number of points to find
+refinement = 8 # Number of steps to run the dichotomy search for
+cross=False # If True, will compute the transition point between all pairs of parameters. Useful for huge generations, but lessens variations
+use_mean = True # If True, uses the mean of the activations to determine death. If False, uses the max.
 
 # threshold below which we say we have found a dead config in the initial search
-threshold_e = 0.03
+threshold_e = 0.05
 # threshold below which we say we have found a dead config in the dichotomy search (generally matches threshold_e)
-threshold_i = 0.03
+threshold_i = 0.05
 
-use_mean = False
-# Uncomment to use latest
+batch_size = 20 # Number of worlds to simulate in parallel. Reduce if you run out of memory
+
+# Uncomment to use the equivalent of a 'TEMP' directory. IS EMPTIED EACH TIME THE SCRIPT IS RUN
 folder_save= 'data/latest'
 
 def param_generator(batch_size,device='cpu'):
@@ -50,8 +52,8 @@ def param_generator(batch_size,device='cpu'):
     # Std of the grow functions :
     # sigma = mu/(3*np.sqrt(2*np.log(2)))*(1+ (torch.ones_like(mu)-2*torch.rand_like(mu)))
     # sigma = (mu)/(np.sqrt(2*math.log(2)))*(1+torch.clamp(torch.randn((batch_size,3,3), device=device),min=-1+1e-3,max=2))
-    sigma = 0.2*torch.rand((batch_size,3,3), device=device)+1e-4
-    # sigma = mu/(np.sqrt(2*math.log(2)))*0.7*torch.rand((batch_size,3,3), device=device)+1e-4
+    # sigma = 0.2*torch.rand((batch_size,3,3), device=device)+1e-4
+    sigma = mu/(np.sqrt(2*math.log(2)))*0.8*torch.rand((batch_size,3,3), device=device)+1e-4
 
     params = {
             'k_size' : 31, 
@@ -60,55 +62,20 @@ def param_generator(batch_size,device='cpu'):
             # Relative sizes of kernel gaussians (l,i,j) represents the l'th ring contribution from channel i to channel j :
             'beta' : torch.rand((batch_size,3,3,3), device=device), 
             # Means of kernel gaussians (3 rings * 3 channels * 3 channels)
-            'mu_k' : torch.clamp(0.5+0.3*torch.randn((batch_size,3,3,3), device=device),min=0.,max=1.2), 
+            # 'mu_k' : torch.clamp(0.5+0.3*torch.randn((batch_size,3,3,3), device=device),min=0.,max=1.), 
+            'mu_k' : torch.clamp(0.5+0.2*torch.randn((batch_size,3,3,3), device=device),min=0.,max=1.2), 
             # Stds of kernel gaussians (3 rings * 3 channels * 3 channels)
-            'sigma_k' : 0.1*(1+torch.clamp(0.2*torch.randn((batch_size,3,3,3), device=device),min=-1)+1e-4),
+            'sigma_k' : 0.05*(1+torch.clamp(0.3*torch.randn((batch_size,3,3,3), device=device),min=-0.9)+1e-4),
             # Weighing of growth functions contribution to each channel
-            # 'weights' : torch.rand(batch_size,3,3,device=device)*(1-0.8*torch.diag(torch.ones(3,device=device))) 
-            'weights' : torch.rand(batch_size,3,3,device=device)
+            'weights' : torch.rand(batch_size,3,3,device=device)*(1-0.8*torch.diag(torch.ones(3,device=device)))
+            # 'weights' : torch.rand(batch_size,3,3,device=device)
         }
 
     return params
 
 
-# def param_generator(batch_size,device='cpu'):
-#     """
-#         Prior distribution on the parameters we generate. Can be modified to search in a different
-#         space.
 
-#         Args:
-#             batch_size : number of parameters to generate
-#             device : device on which to generate the parameters
-        
-#         Returns:
-#             dict of batched parameters
-#     """
-#     # Means of the growth functions :
-#     # mu = 0.7*torch.rand((batch_size,3,3), device=device) 
-#     mu = 0.7*torch.rand((batch_size,3,3), device=device) 
-    
-#     # Std of the grow functions :
-#     # sigma = mu/(3*np.sqrt(2*np.log(2)))*(1+ (torch.ones_like(mu)-2*torch.rand_like(mu)))
-#     # sigma = (mu)/(np.sqrt(2*math.log(2)))*(1+torch.clamp(torch.randn((batch_size,3,3), device=device),min=-1+1e-3,max=2))
-#     # sigma = 0.2*torch.rand((batch_size,3,3), device=device)+1e-4
-#     sigma = mu/(np.sqrt(2*math.log(2)))*0.7*torch.rand((batch_size,3,3), device=device)+1e-4
-
-#     params = {
-#             'k_size' : 31, 
-#             'mu':  mu ,
-#             'sigma' : sigma,
-#             # Relative sizes of kernel gaussians (l,i,j) represents the l'th ring contribution from channel i to channel j :
-#             'beta' : torch.rand((batch_size,3,3,3), device=device), 
-#             # Means of kernel gaussians (3 rings * 3 channels * 3 channels)
-#             'mu_k' : torch.clamp(0.5+0.3*torch.randn((batch_size,3,3,3), device=device),min=0.,max=1.), 
-#             # Stds of kernel gaussians (3 rings * 3 channels * 3 channels)
-#             'sigma_k' : 0.05*(1+torch.clamp(0.2*torch.randn((batch_size,3,3,3), device=device),min=-1)+1e-4),
-#             # Weighing of growth functions contribution to each channel
-#             'weights' : torch.rand(batch_size,3,3,device=device)*(1-0.8*torch.diag(torch.ones(3,device=device))) 
-#             # 'weights' : torch.rand(batch_size,3,3,device=device)
-#         }
-
-#     return params
+#=========================== DO NOT MODIFY BELOW THIS LINE ===========================================
 if __name__=='__main__':
     from time import time
     import math
@@ -126,14 +93,12 @@ if __name__=='__main__':
     
     os.makedirs(batch_folder_save, exist_ok=True)
     os.makedirs(individual_folder_save, exist_ok=True)
-    batch_size = 20
+    batch_size = batch_size
 
-    f_utils.save_rand('data/latest_rand',batch_size=batch_size,num=num_points,param_generator=param_generator,device=device)
+    f_utils.save_rand('data/latest_rand',batch_size=batch_size,num=num_points//batch_size,param_generator=param_generator,device=device)
 
     with torch.no_grad():
         t00 = time()
-
-
         # optimal if sqrt(num_points)>batch_size
         if(cross):
             num_each = math.ceil(math.sqrt(num_points))

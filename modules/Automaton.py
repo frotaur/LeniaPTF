@@ -118,6 +118,7 @@ class LeniaMC(Automaton):
         self.register_buffer('sigma_k',params['sigma_k'])# standard deviation of the kernel gaussians (3,3, # of rings)
         self.register_buffer('weights',params['weights']) # weigths for the growth weighted sum (3,3)
 
+        self.norm_weights()
         self.register_buffer('kernel',torch.zeros((self.k_size,self.k_size)))
         self.kernel = self.compute_kernel() # (3,3,h, w)
 
@@ -136,7 +137,11 @@ class LeniaMC(Automaton):
         #         axs[i,j].set_title('Growth : ' + RGB[i] + '->' +RGB[j])
         # fig.show()
 
-
+    def norm_weights(self):
+        # Normalizing the weights
+        N = self.weights.sum(dim=0, keepdim = True)
+        self.weights = torch.where(N > 1.e-6, self.weights/N, 0)
+    
     def update_params(self, params):
         """
             Updates the parameters of the automaton.
@@ -150,6 +155,7 @@ class LeniaMC(Automaton):
         self.mu_k = params['mu_k']
         self.sigma_k = params['sigma_k']
         self.weights = params['weights']
+        self.norm_weights()
 
         self.kernel = self.compute_kernel() # (3,3,h, w)
 
@@ -175,7 +181,6 @@ class LeniaMC(Automaton):
         if(not wavelength):
             wavelength = self.k_size
         self.state = perlin((1,self.h,self.w),[wavelength]*2,device=self.device,black_prop=0.25)[0]
-        print('perlin k_size is :',wavelength)
     
     def kernel_slice(self, r): # r : (k_size,k_size)
         """
@@ -192,7 +197,7 @@ class LeniaMC(Automaton):
         sigma_k = self.sigma_k[:,:,:, None, None]
 
         # K = torch.exp(-((r-mu_k)/2)**2/sigma_k) #(3,3,#of rings,k_size,k_size)
-        K = torch.exp(-((r-mu_k)/(sigma_k))**2/2) 
+        K = torch.exp(-((r-mu_k)/sigma_k)**2/2) 
         #print(K.shape)
 
         beta = self.beta[:,:,:, None, None]
@@ -235,7 +240,7 @@ class LeniaMC(Automaton):
         mu = mu.expand(-1,-1, self.h, self.w)
         sigma = sigma.expand(-1,-1, self.h, self.w)
 
-        return 2*torch.exp(-((u-mu)/(sigma))**2/2)-1 #(3,3,H,W)
+        return 2*torch.exp(-((u-mu)**2/(sigma)**2)/2)-1 #(3,3,H,W)
 
 
     def step(self):
@@ -247,20 +252,15 @@ class LeniaMC(Automaton):
         # kernel_eff = torch.zeros_like(kernel_eff)
         # kernel_eff[]
 
-        U = F.pad(self.state[None], [(self.k_size-1)//2]*4, mode = 'circular')
+        U = F.pad(self.state[None], [(self.k_size-1)//2]*4, mode = 'circular') # (1,3,H+pad,W+pad)
         U = F.conv2d(U, kernel_eff, groups=3).squeeze(0) #(9,H,W)
         U = U.reshape(3,3,self.h,self.w)
 
         assert (self.h,self.w) == (self.state.shape[1], self.state.shape[2])
         # Maybe change to weighted sum with the weights being also parameters  (done)
         # factor = torch.eye(3)[...,None,None].to(self.device) #(3,3)
-        
-        # Normalizing the weights each time is wasteful; do it in the init.
-        N = self.weights.sum(dim=0, keepdim = True)
-        # print(N)
-        weights = torch.where(N > 1.e-6, self.weights/N, 0)
-        # print(weights)
-        weights = weights [...,None, None]
+ 
+        weights = self.weights [...,None, None]
         weights = weights.expand(-1, -1, self.h,self.w) # 
 
         # print((U*weights).sum(dim=(2,3)))
@@ -299,20 +299,6 @@ class LeniaMC(Automaton):
 
         return torch.clamp(state + self.dt*dx, 0, 1)
     
-    def batch_evolve_state(self,states,num_steps):
-        """
-            Evolves a batch of states for a given number of steps.
-            Args :
-            states : (B,3,H,W) tensor, batch of states
-            num_steps : int, number of steps to evolve the states
-        """
-        B = states.shape[0]
-        kernel_eff = self.kernel.reshape([9,1,self.k_size,self.k_size])[None].expand(B,-1,-1,-1,-1)#(B,9,1,k,k)
-
-        U = F.pad(states, [(self.k_size-1)//2]*4, mode = 'circular') # (B,3,H+pad,W+pad)
-        U = F.conv2d(U, kernel_eff, groups=3).squeeze(0) #(9,H,W)
-        U = U.reshape(3,3,self.h,self.w)        
-
     def draw(self):
         """
             Draws the worldmap from state.
@@ -321,16 +307,7 @@ class LeniaMC(Automaton):
         """
         
         toshow= self.state.permute((2,1,0)) #(W,H,3)
-        W,H,_ = toshow.shape
-        # toshow = toshow.expand(-1,-1,3) #(W,H,3)
-        
-        # toshow.reshape((H*W)) # (W*H*3)
 
-        # cmap = plt.get_cmap("viridis")
-        # toshow = cmap(toshow.cpu().numpy()) # (W*H,4)
-        # toshow = toshow.reshape((W,H,4))[:,:,:3]
-        
-        # self._worldmap =np.zeros_like(self._worldmap) #(W,H,3)
         self._worldmap= toshow.cpu().numpy()   
         
     def mass(self):
@@ -410,13 +387,14 @@ class BatchLeniaMC(DevModule):
         self.weights = params['weights']
         self.k_size = params['k_size'] # kernel sizes (same for all)
         self.norm_weights()
+        self.batch = params['mu'].shape[0] # update batch size
+
         self.kernel = self.compute_kernel() # (B,3,3,h, w)
 
-        self.batch = params['mu'].shape[0] # update batch size
 
     def norm_weights(self):
         # Normalizing the weights
-        N = self.weights.sum(dim=0, keepdim = True)
+        N = self.weights.sum(dim=1, keepdim = True) # (B,3,3)
         self.weights = torch.where(N > 1.e-6, self.weights/N, 0)
 
     def get_params(self):
@@ -510,18 +488,18 @@ class BatchLeniaMC(DevModule):
         U = self.state.reshape(1,self.batch*3,self.h,self.w) # (1,B*3,H,W)
         U = F.pad(U, [(self.k_size-1)//2]*4, mode = 'circular') # (1,B*3,H+pad,W+pad)
         
-        U = F.conv2d(U, kernel_eff, groups=3*self.batch).squeeze(0) #(1,B*9,H,W) squeeze to (B*9,H,W)
+        U = F.conv2d(U, kernel_eff, groups=3*self.batch).squeeze(1) #(B*9,1,H,W) squeeze to (B*9,H,W)
         U = U.reshape(self.batch,3,3,self.h,self.w) # (B,3,3,H,W)
 
         # assert (self.h,self.w) == (self.state.shape[2], self.state.shape[3])
         
-        weights = self.weights [...,None, None] # (B,3,3,1,1)
+        weights = self.weights[...,None, None] # (B,3,3,1,1)
         weights = weights.expand(-1,-1, -1, self.h,self.w) # (B,3,3,H,W)
 
         dx = (self.growth(U)*weights).sum(dim=1) #(B,3,H,W)
 
         self.state = torch.clamp(self.state + self.dt*dx, 0, 1)     
-        
+    
     def mass(self):
         """
             Computes average 'mass' of the automaton for each channel
@@ -531,3 +509,19 @@ class BatchLeniaMC(DevModule):
         """
 
         return self.state.mean(dim=(-1,-2)) # (B,3) mean mass for each color
+
+    def draw(self):
+        """
+            Draws the worldmap from state.
+            Separate from step so that we can freeze time,
+            but still 'paint' the state and get feedback.
+        """
+        assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
+        toshow= self.state[0].permute((2,1,0)) #(W,H,3)
+
+        self._worldmap= toshow.cpu().numpy()   
+    
+        
+    @property
+    def worldmap(self):
+        return (255*self._worldmap).astype(dtype=np.uint8)

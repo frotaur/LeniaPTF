@@ -72,40 +72,39 @@ def around_params(params,device):
     }
     return p
 
-def load_params(file, device):
+def load_params(file, make_batch=False,device='cpu'):
     """
         Loads and return the parameters given a file (pickle for now) containing them.
+
+        Args:
+            file : path to the file containing the parameters
+            make_batch : if True, adds a batch dimension to the parameters
+            device : device on which to load the parameters
     """
 
     f = open(file, 'rb')
     dico = pk.load(f)
     f.close()
-
+    params = {}
     if len(dico) > 3: 
         # Pure parameter dictionary
-        params = {
-            'k_size' : dico['k_size'],
-            'mu' : dico['mu'].to(device),
-            'sigma' : dico['sigma'].to(device),
-            'beta' : dico['beta'].to(device),
-            'mu_k' : dico['mu_k'].to(device),
-            'sigma_k' : dico['sigma_k'].to(device),
-            'weights' : dico['weights'].to(device)
-        }
+        params['k_size'] = dico['k_size']
+        for key in dico.keys():
+            if(key!='k_size'):         
+                if(not make_batch):
+                    params[key] = dico[key].to(device)
+                else :
+                    params[key] = dico[key][None,...].to(device)
+
+            
 
         return params
     else :
-        # Dead/Live t_crit parameter
-        params_d = dico['params_d']
-        params_a = dico['params_a']
-        t_crit = dico['t_crit']
-        # Compute critical
-        params = sum_params(params_a, params_d, t_crit, device)
-
-        return params
+        raise ValueError('NOT USING TCRIT IN THE PAPER')
     
 def compute_ker(auto, device):
-    kern = auto.compute_kernel().permute((0,3,2,1))
+    kern= auto.compute_kernel()
+    kern = (kern.squeeze(0)).permute((0,3,2,1))
     maxs = torch.tensor((torch.max(kern[0]), torch.max(kern[1]), torch.max(kern[2])), device=device)
     # print(maxs)
     maxs = maxs[:,None,None,None]

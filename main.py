@@ -1,3 +1,9 @@
+"""
+    Scipt to run the automaton in real time. See README for a list of hotkeys.
+"""
+
+
+
 import torch
 import pygame
 from modules.Camera import Camera
@@ -9,19 +15,19 @@ from batch_finder import param_generator
 from modules.utils.b_finder_utils import param_batch_to_list
 import numpy as np, os, random
 from torchenhanced.util import showTens
+#============================== PARAMETERS ==========================================================
+device = 'cuda:0' # Device on which to run the automaton
+W,H = 600,600 # Size of the automaton
+dt = 0.1 # Time step size
 
-device = 'cuda:0'
-W,H = 800,800
-dt = 0.1
 
-param_gen = lambda dev: param_batch_to_list(param_generator(1,device=dev))[0]
+interesting_dir = os.path.join('data','latest') # Directory containing the parameters to load when pressing 'm'
+remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
+#===========================DO NOT MODIFY BELOW THIS LINE===========================================
 
-a = param_gen(device)
-interesting_dir = os.path.join('data','latest')
-remarkable_dir = os.path.join('data','remarkable')
-random_dir = os.path.join('data','latest_rand')
 
-#===================================================================================================
+param_gen = lambda dev: param_generator(1,device=dev)
+
 
 videos_dir = os.path.join('data','videos')
 
@@ -30,19 +36,19 @@ remarkable_dir = os.path.join(remarkable_dir,'individual')
 os.makedirs(interesting_dir, exist_ok=True)
 os.makedirs(remarkable_dir, exist_ok=True)
 os.makedirs(videos_dir, exist_ok=True)
-os.makedirs(random_dir, exist_ok=True)
 
 interest_files = os.listdir(interesting_dir)
 
 if len(interest_files) > 0:
     file = random.choice(interest_files)
-    params = load_params(os.path.join(interesting_dir,file), device=device)
+    params = load_params(os.path.join(interesting_dir,file), make_batch=True, device=device)
 else :
     params = param_gen(device)
+    print('FUGG')
 
-
+print(params['mu'].shape)   
 # Initialize the automaton
-auto = LeniaMC((W,H), dt, params, device=device)
+auto = BatchLeniaMC((1,W,H), dt, params, device=device)
 auto.to(device)
 auto.update_params(params)
 kern = compute_ker(auto, device)
@@ -62,20 +68,9 @@ world_state = np.random.randint(0,255,(W,H,3),dtype=np.uint8)
 
 updating = True
 
-# Red = False
-# Green = False
-# Blue = False
-# i = torch.tensor([0,1,2])
 
 n_steps = 0
 
-launch_video=True
-recording = False
-
-# x,y = torch.meshgrid(torch.arange(0,W,device=device),torch.arange(0,H,device=device))
-# left_dragging = False
-# right_dragging = False
-# paint_size = 2
 frame= 0
 
 chosen_interesting = 0
@@ -114,14 +109,14 @@ while running:
                 chosen_interesting = (chosen_interesting+1)%len(interest_files)
 
                 print('loaded ', os.path.join(interesting_dir,file))
-                params = load_params(os.path.join(interesting_dir,file),device=device)
+                params = load_params(os.path.join(interesting_dir,file),make_batch=True,device=device)
 
                 auto.update_params(params)
                 kern = compute_ker(auto, device) 
             if(event.key == pygame.K_s):
                 # Save the current parameters :
                 para = auto.get_params()
-                name = f'mu{para["mu"][0][0].item():.2f}_sigma{para["sigma"][0][0].item():.2f}_{para["beta"][0,0,0].item():.2f}'
+                name = f'mu{para["mu"][0][0][0].item():.2f}_sigma{para["sigma"][0][0][0].item():.2f}_{para["beta"][0,0,0,0].item():.2f}'
                 f = open(os.path.join(remarkable_dir,'int'+name+'.pk'), "wb") 
                 pk.dump(para,f)
                 f.close() 
@@ -132,8 +127,7 @@ while running:
             if(event.key == pygame.K_l):
                 showTens(torch.einsum('chwd->cdhw',kern.cpu()))
                 print('k_size : ', auto.k_size)
-            if(event.key == pygame.K_a):
-                release_video = True
+            if(event.key == pygame.K_r):
                 recording = not recording
             if(event.key == pygame.K_DELETE):
                 auto.state = torch.zeros_like(auto.state)
@@ -148,14 +142,13 @@ while running:
             n_steps += 1
 
     auto.draw() # Draw the worldmap before retrieving it
-    #Retrieve the world_state from automaton
     
     #Retrieve the world_state from automaton
     world_state = auto.worldmap
     if display_kernel == True:
         world_state[:auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[0].cpu()
         world_state[auto.k_size:2*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[1].cpu()  
-        world_state[2*auto.k_size:3*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern  [2].cpu()  
+        world_state[2*auto.k_size:3*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[2].cpu()  
 
     #Make the viewable surface.
     surface = pygame.surfarray.make_surface(world_state)
@@ -176,13 +169,9 @@ while running:
     # Clear the screen 
     screen.fill((0, 0, 0))
 
-    m = [f"{x.item(): .2f}" for x in auto.mass()]
-    # cent = auto.centroid()
-    # print(cent[0])
-    # cent = [f"({y[0].item(): .2f}, {y[1].item(): .2f})" for y in auto.centroid().transpose(0,1)]  
-    # cent = [f"sig : {float(auto.sigma_k[random.randint(0,2),random.randint(0,2),random.randint(0,2)]):.2f} "]
+    m = [f"{x.item(): .2f}" for x in auto.mass().squeeze(0)]
+
     s = f'frames : {n_steps}, mass : {auto.mass().mean():.2f}'
-    # s = str(erf[0])+str(erf[1])+str(erf[2]) + '\n'+str(erf[3])+str(erf[4])+str(erf[5]) + '\n'+str(erf[6])+str(erf[7])+str(erf[8])
     upMacro = font.render(s, False, (255,255,255), (0,0,0))
     
 
@@ -194,11 +183,9 @@ while running:
 
     # Update the screen
     pygame.display.flip()
-    # flip() the display to put your work on screen
 
-    clock.tick(120)  # limits FPS to 60
-    if(torch.isnan(auto.state).any()):
-        print('NAN')
+    clock.tick(120)  # limits FPS to 120
+
 
 if(not launch_video):
     video_out.release()

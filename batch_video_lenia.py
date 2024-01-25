@@ -1,12 +1,17 @@
-from modules.utils.main_utils import gen_batch_params,load_params
+"""
+    Creates a grid of video for saved batch of parameters
+"""
+
+
+from modules.utils.main_utils import load_params
 from modules.Automaton import BatchLeniaMC
 import torch
 from torchenhanced.util import saveTensVideo, showTens, gridify
-from torchvision.utils import make_grid
 import cv2,numpy as np
 from tqdm import tqdm
 from time import time
 import torchvision.transforms as transf
+import os
 
 @torch.no_grad()
 def save_batch_video(batch_param_location,name,save_name,bunching=15, columns=5, out_size=1200):
@@ -18,8 +23,8 @@ def save_batch_video(batch_param_location,name,save_name,bunching=15, columns=5,
             name : name of the video
             bunching : number of frames to compute at once (default 100)
     """
-    simulation_time = 1000
-    size = 400,400
+    simulation_time = 600
+    size = 200,200
     fps=120
     save_fold = os.path.join('data/videos',save_name)
     os.makedirs(save_fold,exist_ok=True)
@@ -74,17 +79,17 @@ def save_batch_video(batch_param_location,name,save_name,bunching=15, columns=5,
     # saveTensVideo(tensor_out,folderpath='.',name=name,fps=fps,out_size=1500,columns=5)
 
 if __name__=='__main__':
-    import os
+    ## PARAMETERS TO CHANGE
+    columns = 6 # Number of columns in the grid
+    location = 'data/latest_rand/batch' # Location of the batch of parameters
+    save_name = 'latest_rand' # Name of the folder in which to save the videos
 
-    columns = 5
+    ## DO NOT CHANGE WHAT FOLLOWS
 
-    # batch_files = os.listdir('data/paper_search/batch')
-    # batch_params = [os.path.join('data/paper_search/batch',f) for f in batch_files]
-    location = 'data/latest/batch'
     batch_files = os.listdir(location)
     batch_params = [os.path.join(location,f) for f in batch_files]
-    save_name = 'transi_rand'
+
 
     print('making a bunch of videos')
     for i,b_par in tqdm(enumerate(batch_params)):
-        save_batch_video(b_par, batch_files[i].split('.')[0], save_name=save_name)
+        save_batch_video(b_par, batch_files[i].split('.')[0],columns=6, save_name=save_name)
