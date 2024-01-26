@@ -76,13 +76,9 @@ frame= 0
 chosen_interesting = 0
 
 display_kernel = False
-<<<<<<< HEAD
-recording=False
-=======
 
 recording=False
 launch_video = True
->>>>>>> 96bd14e091603ed7c393625c8af20974d10a8459
 
 while running:
     # poll for events
