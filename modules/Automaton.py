@@ -401,7 +401,7 @@ class BatchLeniaMC(DevModule):
         """
             Get the parameter dictionary which defines the automaton
         """
-        params = dict(mu = self.mu, sigma = self.sigma, beta = self.beta,
+        params = dict(k_size = self.k_size,mu = self.mu, sigma = self.sigma, beta = self.beta,
                        mu_k = self.mu_k, sigma_k = self.sigma_k, weights = self.weights)
         
         return params
@@ -437,7 +437,7 @@ class BatchLeniaMC(DevModule):
 
         beta = self.beta[..., None, None] # (B,3,3,#of rings,1,1)
 
-        K = torch.sum(beta*K, dim = 2)
+        K = torch.sum(beta*K, dim = 3)
 
         
         return K #(B,3,3,k_size, k_size)
