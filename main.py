@@ -21,7 +21,7 @@ W,H = 600,600 # Size of the automaton
 dt = 0.1 # Time step size
 
 
-interesting_dir = os.path.join('data','latest') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('data','remarkable') # Directory containing the parameters to load when pressing 'm'
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
 #===========================DO NOT MODIFY BELOW THIS LINE===========================================
 
@@ -77,6 +77,8 @@ chosen_interesting = 0
 
 display_kernel = False
 
+recording=False
+launch_video = True
 
 while running:
     # poll for events

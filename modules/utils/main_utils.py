@@ -78,7 +78,7 @@ def load_params(file, make_batch=False,device='cpu'):
 
         Args:
             file : path to the file containing the parameters
-            make_batch : if True, adds a batch dimension to the parameters
+            make_batch : if True, adds a batch dimension to the parameters if not already batched
             device : device on which to load the parameters
     """
 
@@ -86,14 +86,24 @@ def load_params(file, make_batch=False,device='cpu'):
     dico = pk.load(f)
     f.close()
     params = {}
+
+    mushape = dico['mu'].shape
+    if(len(mushape)==3):
+        make_batch = False
+
     if len(dico) > 3: 
         # Pure parameter dictionary
-        params['k_size'] = dico['k_size']
+        if('k_size' in dico.keys()):
+            params['k_size'] = dico['k_size']
+            print('loaded k_size : ', params['k_size'])
+        else :
+            params['k_size'] = 31
+        
         for key in dico.keys():
             if(key!='k_size'):         
                 if(not make_batch):
                     params[key] = dico[key].to(device)
-                else :
+                else:
                     params[key] = dico[key][None,...].to(device)
 
             
