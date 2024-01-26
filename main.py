@@ -21,7 +21,7 @@ W,H = 600,600 # Size of the automaton
 dt = 0.1 # Time step size
 
 
-interesting_dir = os.path.join('data','remarkable') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('remark_record') # Directory containing the parameters to load when pressing 'm'
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
 #===========================DO NOT MODIFY BELOW THIS LINE===========================================
 
@@ -79,6 +79,8 @@ display_kernel = False
 
 recording=False
 launch_video = True
+
+counter = 0 # counter to get only the frames we want
 
 while running:
     # poll for events
@@ -154,20 +156,22 @@ while running:
 
     #Make the viewable surface.
     surface = pygame.surfarray.make_surface(world_state)
-    
+
     if(recording):
         if(launch_video):
             launch_video = False
-            fourcc = cv2.VideoWriter_fourcc(*'HFYU')
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
             para = auto.get_params()
             name = f'mu{para["mu"][0,0,0].item():.2f}_sigma{para["sigma"][0,0,0].item():.2f}'
             vid_loc = os.path.join(videos_dir,name+'.avi')
             # vid_loc = 'Videos/McLenia_orbiums_int.avi'
-            video_out = cv2.VideoWriter(vid_loc, fourcc, 60.0, (W, H))
-
-        frame_bgr = cv2.cvtColor(auto.worldmap, cv2.COLOR_RGB2BGR)
-        video_out.write(frame_bgr)
-        pygame.draw.circle(surface, (255,0,0), (W-10,H-10),2)
+            video_out = cv2.VideoWriter(vid_loc, fourcc, 100.0, (W, H))
+        if (counter%2 == 0):
+            frame_bgr = cv2.cvtColor(auto.worldmap, cv2.COLOR_RGB2BGR)
+            video_out.write(frame_bgr)
+            pygame.draw.circle(surface, (255,0,0), (W-10,H-10),2)
+    
+    counter += 1
     # Clear the screen 
     screen.fill((0, 0, 0))
 
