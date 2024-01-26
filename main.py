@@ -67,7 +67,7 @@ camera = Camera(W,H)
 world_state = np.random.randint(0,255,(W,H,3),dtype=np.uint8)
 
 updating = True
-
+launch_video=True
 
 n_steps = 0
 
@@ -76,7 +76,7 @@ frame= 0
 chosen_interesting = 0
 
 display_kernel = False
-
+recording=False
 
 while running:
     # poll for events
@@ -158,7 +158,7 @@ while running:
             launch_video = False
             fourcc = cv2.VideoWriter_fourcc(*'HFYU')
             para = auto.get_params()
-            name = f'mu{para["mu"][0][0].item():.2f}_sigma{para["sigma"][0][0].item():.2f}'
+            name = f'mu{para["mu"][0,0,0].item():.2f}_sigma{para["sigma"][0,0,0].item():.2f}'
             vid_loc = os.path.join(videos_dir,name+'.avi')
             # vid_loc = 'Videos/McLenia_orbiums_int.avi'
             video_out = cv2.VideoWriter(vid_loc, fourcc, 60.0, (W, H))
