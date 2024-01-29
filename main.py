@@ -1,9 +1,6 @@
 """
     Scipt to run the automaton in real time. See README for a list of hotkeys.
 """
-
-
-
 import torch
 import pygame
 from modules.Camera import Camera
@@ -21,7 +18,7 @@ W,H = 600,600 # Size of the automaton
 dt = 0.1 # Time step size
 
 
-interesting_dir = os.path.join('remark_record') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('demo_params') # Directory containing the parameters to load when pressing 'm'
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
 #===========================DO NOT MODIFY BELOW THIS LINE===========================================
 
@@ -128,9 +125,6 @@ while running:
                 updating=not updating
             if(event.key == pygame.K_k):
                 display_kernel = not display_kernel
-            if(event.key == pygame.K_l):
-                showTens(torch.einsum('chwd->cdhw',kern.cpu()))
-                print('k_size : ', auto.k_size)
             if(event.key == pygame.K_r):
                 recording = not recording
             if(event.key == pygame.K_DELETE):

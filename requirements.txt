@@ -1,0 +1,10 @@
+numpy
+opencv_python
+perlin_numpy
+pygame
+pygame_ce
+pyperlin
+torch
+torchenhanced==0.2.16.2
+torchvision
+tqdm
