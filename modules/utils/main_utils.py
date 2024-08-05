@@ -17,9 +17,9 @@ def sum_params(params_a, params_d,t_crit, device):
     return params
 
 ## Initialize manually
-def gen_params(device):
+def gen_params(device, num_channels=3):
     """ Generates parameters which are expected to sometime die, sometime live. Very Heuristic."""
-    mu = torch.rand((3,3), device=device)
+    mu = torch.rand((num_channels,num_channels), device=device)
     sigma = mu/(3*np.sqrt(2*np.log(2)))*(1+ (torch.ones_like(mu)-2*torch.rand_like(mu)))
         
 
@@ -27,16 +27,17 @@ def gen_params(device):
         'k_size' : 25, 
         'mu':  mu ,
         'sigma' : sigma,
-        'beta' : torch.rand((3,3,3), device=device),
-        'mu_k' : torch.rand((3,3,3), device=device),
-        'sigma_k' : torch.rand((3,3,3), device=device),
-        'weights' : torch.rand((3,3), device = device) # element i, j represents contribution from channel i to channel j
+        'beta' : torch.rand((num_channels,num_channels,3), device=device),
+        'mu_k' : torch.rand((num_channels,num_channels,3), device=device),
+        'sigma_k' : torch.rand((num_channels,num_channels,3), device=device),
+        'weights' : torch.rand((num_channels,num_channels), device = device) # element i, j represents contribution from channel i to channel j
     }
+
     return params
 
-def gen_batch_params(batch_size,device='cpu'):
+def gen_batch_params(batch_size,device='cpu', num_channels=3):
     """ Generates batch parameters."""
-    mu = torch.rand((batch_size,3,3), device=device)
+    mu = torch.rand((batch_size,num_channels,num_channels), device=device)
     sigma = mu/(3*np.sqrt(2*np.log(2)))*(1+ (torch.ones_like(mu)-2*torch.rand_like(mu)))
         
 
@@ -44,10 +45,10 @@ def gen_batch_params(batch_size,device='cpu'):
         'k_size' : 25, 
         'mu':  mu ,
         'sigma' : sigma,
-        'beta' : torch.rand((batch_size,3,3,3), device=device),
-        'mu_k' : torch.rand((batch_size,3,3,3), device=device),
-        'sigma_k' : torch.rand((batch_size,3,3,3), device=device),
-        'weights' : torch.rand((batch_size,3,3), device = device) # element i, j represents contribution from channel i to channel j
+        'beta' : torch.rand((batch_size,num_channels,num_channels,3), device=device),
+        'mu_k' : torch.rand((batch_size,num_channels,num_channels,3), device=device),
+        'sigma_k' : torch.rand((batch_size,num_channels,num_channels,3), device=device),
+        'weights' : torch.rand((batch_size,num_channels,num_channels), device = device) # element i, j represents contribution from channel i to channel j
     }
     return params
 
@@ -113,8 +114,16 @@ def load_params(file, make_batch=False,device='cpu'):
         raise ValueError('NOT USING TCRIT IN THE PAPER')
     
 def compute_ker(auto, device):
-    kern= auto.compute_kernel()
-    kern = (kern.squeeze(0)).permute((0,3,2,1))
+    kern= auto.compute_kernel() # (1,C,C, k_size, k_size)
+    if(kern.shape[1]==1):
+        kern = kern.expand(-1,3,3,-1,-1)
+        return kern[0,:,0,:,:].expand(3,-1,-1)
+    elif(kern.shape[1]==2):
+        kern = torch.cat((kern,torch.zeros_like(kern[:,1:])),dim=1) # (1,3,2,k_size,k_size)
+        kern = torch.cat((kern,torch.zeros_like(kern[:,:,:1])),dim=2) # (1,3,3,k_size,k_size)
+    elif(kern.shape[1]>3):
+        kern = kern[:,:3,:3]
+    kern = (kern.squeeze(0)).permute((0,3,2,1)) # (C,k_size,k_size,C)
     maxs = torch.tensor((torch.max(kern[0]), torch.max(kern[1]), torch.max(kern[2])), device=device)
     # print(maxs)
     maxs = maxs[:,None,None,None]

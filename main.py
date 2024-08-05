@@ -14,16 +14,16 @@ import numpy as np, os, random
 from torchenhanced.util import showTens
 #============================== PARAMETERS ==========================================================
 device = 'cuda:0' # Device on which to run the automaton
-W,H = 600,600 # Size of the automaton
+W,H = 400,600 # Size of the automaton
 dt = 0.1 # Time step size
+num_channels= 1
 
-
-interesting_dir = os.path.join('demo_params') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('data','latest') # Directory containing the parameters to load when pressing 'm'
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
 #===========================DO NOT MODIFY BELOW THIS LINE===========================================
 
 
-param_gen = lambda dev: param_generator(1,device=dev)
+param_gen = lambda dev: param_generator(1,num_channels=num_channels,device=dev)
 
 
 videos_dir = os.path.join('data','videos')
@@ -45,7 +45,7 @@ else :
 
 print(params['mu'].shape)   
 # Initialize the automaton
-auto = BatchLeniaMC((1,W,H), dt, params, device=device)
+auto = BatchLeniaMC((1,H,W), dt, params=params, num_channels=num_channels, device=device)
 auto.to(device)
 auto.update_params(params)
 kern = compute_ker(auto, device)
@@ -127,6 +127,9 @@ while running:
                 display_kernel = not display_kernel
             if(event.key == pygame.K_r):
                 recording = not recording
+                if(not launch_video):
+                    video_out.release()
+                    launch_video = True 
             if(event.key == pygame.K_DELETE):
                 auto.state = torch.zeros_like(auto.state)
 
@@ -159,13 +162,14 @@ while running:
             name = f'mu{para["mu"][0,0,0].item():.2f}_sigma{para["sigma"][0,0,0].item():.2f}'
             vid_loc = os.path.join(videos_dir,name+'.avi')
             # vid_loc = 'Videos/McLenia_orbiums_int.avi'
-            video_out = cv2.VideoWriter(vid_loc, fourcc, 100.0, (W, H))
+            video_out = cv2.VideoWriter(vid_loc, fourcc, 120.0, (W, H))
         if (counter%2 == 0):
-            frame_bgr = cv2.cvtColor(auto.worldmap, cv2.COLOR_RGB2BGR)
+            frame_bgr = cv2.cvtColor(auto.worldmap.transpose(1,0,2), cv2.COLOR_RGB2BGR)
             video_out.write(frame_bgr)
-            pygame.draw.circle(surface, (255,0,0), (W-10,H-10),2)
+        pygame.draw.circle(surface, (255,0,0), (W-10,H-10),2)
+        counter += 1
     
-    counter += 1
+    
     # Clear the screen 
     screen.fill((0, 0, 0))
 

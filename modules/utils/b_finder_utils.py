@@ -6,7 +6,7 @@ from tqdm import tqdm
 from math import ceil
 
 @torch.no_grad()
-def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshold,num_examples=None, use_mean=True, device='cpu'):
+def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshold, num_channels=3,num_examples=None, use_mean=True, device='cpu'):
     """
         Finds a set of parameter of dead automaton, and a set of parameters of an alive automaton.
 
@@ -16,6 +16,7 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
             N_steps : number of simulation steps before checking phase
             params_generator : function which returns a batch of parameters
             threshold : threshold below which we say we have found a dead config
+            num_channels : number of channels in the automaton
             num_examples: Number of params of each phase to find.
                 If None, generates batch_size//2 dead and batch_size//2 alive automata.
             use_mean : if True, uses mean of mass_f to determine if dead or alive, else uses max
@@ -32,7 +33,7 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
     found_a = False
     H,W = size
 
-    auto = BatchLeniaMC((batch_size,*size), dt, device=device)
+    auto = BatchLeniaMC((batch_size,*size), dt, num_channels=num_channels, device=device)
     auto.to(device)
 
     if(num_examples is None):
@@ -40,7 +41,7 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
 
     dead_params = {}
     alive_params = {}
-    params = params_generator(batch_size,device)
+    params = params_generator(batch_size,num_channels=num_channels,device=device)
 
     dead_params['k_size'] = params['k_size']
     alive_params['k_size'] = params['k_size']
@@ -49,13 +50,15 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
     n_alive = 0
     while (not(found_d and found_a)):
         # Initialize the automaton
-        params = params_generator(batch_size,device) # Params for next run TODO : ACTUALLY PUT IT UP THERE
+        params = params_generator(batch_size,num_channels=num_channels,device=device) # Params for next run TODO : ACTUALLY PUT IT UP THERE
         auto.update_params(params)
         auto.set_init_perlin()
+
         print('Auto k_size : ', auto.k_size)
         t0 = time()
         for _ in range(N_steps):
             auto.step()
+
         print('Simulation took : ', time()-t0)	
         if(use_mean):
             mass_f = auto.mass().mean(dim=1) #  (B,)
@@ -113,7 +116,7 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, threshol
        
 
 @torch.no_grad()
-def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, use_mean=True,device='cpu'):
+def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, num_channels=3, use_mean=True,device='cpu'):
     """
         By dichotomy, finds the parameters of an interesting automaton. By interesting, here
         we mean a set of parameters which lies at the transition between an asymptotically dead
@@ -131,6 +134,7 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, u
             use_mean : if True, uses mean of mass_f to determine if dead or alive, else uses max
             refinement : number of iterations of dichotomy
             threshold : threshold below which we say we have a dead config
+            num_channels : number of channels in the automaton
         
         Returns:
             t_crit : threshold for which we have a transition between dead and alive
@@ -146,8 +150,10 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, u
     assert batch_size==p_d['mu'].shape[0], 'Batch sizes must match'
 
     t_crit = torch.full((batch_size,),0.5,device=device)
-    auto = BatchLeniaMC((batch_size,*size), dt ,device=device)
+
+    auto = BatchLeniaMC((batch_size,*size), dt , num_channels=num_channels, device=device)
     auto.to(device)
+
     print('Ksize : ', p_d['k_size'])
     for i in tqdm(range(refinement)):
         mid_params = mean_params(p_d,p_a)
@@ -187,6 +193,9 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, u
 
 
 def mean_params(p1,p2):
+    """
+        Returns the mean of two parameter dictionaries
+    """
     assert p1['k_size']==p2['k_size'], 'Kernel sizes must match'
 
     new_p = {'k_size' : p1['k_size']}
@@ -281,12 +290,12 @@ def save_param(batch_folder,indiv_folder,params):
     
     return os.path.join(batch_folder,name+'.pk') 
 
-def save_rand(dir,batch_size,num,param_generator,device='cpu'):
+def save_rand(dir,batch_size,num,num_channels,param_generator,device='cpu'):
     dir_b = os.path.join(dir,'batch')
     dir_i = os.path.join(dir,'individual')
 
     os.makedirs(dir_b,exist_ok=True)
     os.makedirs(dir_i,exist_ok=True)
     for i in range(num):
-        params = param_generator(batch_size,device=device)
+        params = param_generator(batch_size,num_channels=num_channels,device=device)
         save_param(dir_b,dir_i,params)

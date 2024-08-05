@@ -17,6 +17,7 @@ device = 'cuda:0'
 H,W = 200,200 # Size of the automaton
 dt = 0.1 # Time step size
 N_steps = 500 # Number of steps to run the automaton for
+num_channels = 1 # Number of channels in the automaton (mainly 3 or 1)
 
 num_points = 36 # Number of points to find
 refinement = 8 # Number of steps to run the dichotomy search for
@@ -28,12 +29,12 @@ threshold_e = 0.05
 # threshold below which we say we have found a dead config in the dichotomy search (generally matches threshold_e)
 threshold_i = 0.05
 
-batch_size = 20 # Number of worlds to simulate in parallel. Reduce if you run out of memory
+batch_size = 10 # Number of worlds to simulate in parallel. Reduce if you run out of memory
 
 # Uncomment to use the equivalent of a 'TEMP' directory. IS EMPTIED EACH TIME THE SCRIPT IS RUN
 folder_save= 'data/latest'
 
-def param_generator(batch_size,device='cpu'):
+def param_generator(batch_size, num_channels = 3,device='cpu'):
     """
         Prior distribution on the parameters we generate. Can be modified to search in a different
         space.
@@ -47,30 +48,30 @@ def param_generator(batch_size,device='cpu'):
     """
     # Means of the growth functions :
     # mu = 0.7*torch.rand((batch_size,3,3), device=device) 
-    mu = 0.7*torch.rand((batch_size,3,3), device=device) 
+    mu = 0.7*torch.rand((batch_size,num_channels,num_channels), device=device) 
     
     # Std of the grow functions :
     # sigma = mu/(3*np.sqrt(2*np.log(2)))*(1+ (torch.ones_like(mu)-2*torch.rand_like(mu)))
-    # sigma = (mu)/(np.sqrt(2*math.log(2)))*(1+torch.clamp(torch.randn((batch_size,3,3), device=device),min=-1+1e-3,max=2))
-    # sigma = 0.2*torch.rand((batch_size,3,3), device=device)+1e-4
-    sigma = mu/(np.sqrt(2*math.log(2)))*0.8*torch.rand((batch_size,3,3), device=device)+1e-4
+    # sigma = (mu)/(np.sqrt(2*math.log(2)))*(1+torch.clamp(torch.randn((batch_size,num_channels,num_channels), device=device),min=-1+1e-3,max=2))
+    # sigma = 0.2*torch.rand((batch_size,num_channels,num_channels), device=device)+1e-4
+    sigma = mu/(np.sqrt(2*math.log(2)))*0.8*torch.rand((batch_size,num_channels,num_channels), device=device)+1e-4
 
     params = {
             'k_size' : 31, 
             'mu':  mu ,
             'sigma' : sigma,
             # Relative sizes of kernel gaussians (l,i,j) represents the l'th ring contribution from channel i to channel j :
-            'beta' : torch.rand((batch_size,3,3,3), device=device), 
+            'beta' : torch.rand((batch_size,num_channels,num_channels,3), device=device), 
             # Means of kernel gaussians (3 rings * 3 channels * 3 channels)
-            # 'mu_k' : torch.clamp(0.5+0.3*torch.randn((batch_size,3,3,3), device=device),min=0.,max=1.), 
-            'mu_k' : torch.clamp(0.5+0.2*torch.randn((batch_size,3,3,3), device=device),min=0.,max=1.2), 
+            # 'mu_k' : torch.clamp(0.5+0.3*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=0.,max=1.), 
+            'mu_k' : torch.clamp(0.5+0.2*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=0.,max=1.2), 
             # Stds of kernel gaussians (3 rings * 3 channels * 3 channels)
-            'sigma_k' : 0.05*(1+torch.clamp(0.3*torch.randn((batch_size,3,3,3), device=device),min=-0.9)+1e-4),
+            'sigma_k' : 0.05*(1+torch.clamp(0.3*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=-0.9)+1e-4),
             # Weighing of growth functions contribution to each channel
-            'weights' : torch.rand(batch_size,3,3,device=device)*(1-0.8*torch.diag(torch.ones(3,device=device)))
+            'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.8*torch.diag(torch.ones(num_channels,device=device)))
             # 'weights' : torch.rand(batch_size,3,3,device=device)
         }
-
+    
     return params
 
 
@@ -95,7 +96,7 @@ if __name__=='__main__':
     os.makedirs(individual_folder_save, exist_ok=True)
     batch_size = batch_size
 
-    f_utils.save_rand('data/latest_rand',batch_size=batch_size,num=num_points//batch_size,param_generator=param_generator,device=device)
+    f_utils.save_rand('data/latest_rand',batch_size=batch_size,num=num_points//batch_size,num_channels=num_channels,param_generator=param_generator,device=device)
 
     with torch.no_grad():
         t00 = time()
@@ -110,7 +111,7 @@ if __name__=='__main__':
             # find two batches of parameters (one dead one alive)
             params_d, params_a = \
                 f_utils.batch_phase_finder((H,W), dt, N_steps, batch_size=batch_size,params_generator=param_generator, 
-                                            threshold=threshold_e, num_examples=min(batch_size,num_each), use_mean=use_mean, device=device) 
+                                            threshold=threshold_e, num_channels=num_channels,num_examples=min(batch_size,num_each), use_mean=use_mean, device=device) 
             
             if(cross):
                 # Compute transition point between all pairs of parameters
@@ -119,11 +120,11 @@ if __name__=='__main__':
                     param_d = f_utils.expand_batch(param_d,params_a['mu'].shape[0])
                     # Param_d has batch_size = 1, but will broadcast seamlessly when summing with params_a
                     t_crit, mid_params = f_utils.interest_finder((H,W), dt, N_steps, param_d, params_a, 
-                                                                refinement, threshold_i, device) 
+                                                                refinement, threshold_i, device ,num_channels=num_channels,) 
                     f_utils.save_param(batch_folder_save,individual_folder_save, mid_params)
             else:
                 t_crit, mid_params = f_utils.interest_finder((H,W), dt, N_steps, params_d, params_a, 
-                                                                refinement, threshold_i,use_mean=use_mean,device=device)
+                                                                refinement, threshold_i,use_mean=use_mean,device=device,num_channels=num_channels,)
 
                 f_utils.save_param(batch_folder_save,individual_folder_save, mid_params)
 

@@ -39,42 +39,6 @@ class Automaton(DevModule) :
     def worldmap(self):
         return (255*self._worldmap).astype(dtype=np.uint8)
 
-class ConwayGoL(Automaton):
-    """
-        Conway Game of life using Torch
-
-        Parameters :
-        size : 2-uple (W,H)
-    """
-
-    def __init__(self, size):
-        super().__init__(size)
-        # 0,1,2,3 of the first dimension are the N,W,S,E directions
-        self.state = torch.randint(0,2,(1,self.h,self.w)) # (1, h, w)
-        self.kernel = torch.tensor([[1,1,1], [1,0,1], [1,1,1]]) # (h=3, w=3)
-        self.kernel = self.kernel[None, None] # (1,1,3,3)
-        
-        
-                    
-    def step(self):
-        """
-            Steps the automaton state by one iteration.
-
-            Completely free to be changed
-        """
-        Sum = F.conv2d(self.state[None], self.kernel, padding = 'same')#(1,1,h,w)
-        Sum = Sum.squeeze(0) #(1,H,W)
-        #print('state avant', self.state)
-
-        self.state = torch.where( self.state ==1, torch.where( torch.logical_and((2 <= Sum), ( Sum <= 3)),  self.state, torch.zeros_like(self.state)), torch.where(Sum == 3, torch.ones_like(self.state), self.state) )
-        #print('state apres', self.state)
-
-        toshow= self.state.permute((2,1,0)) #(W,H,1)
-        toshow = toshow.expand(-1,-1,3) #(W,H,3)
-
-        self._worldmap =np.zeros_like(self._worldmap) #(W,H,3)
-        self._worldmap= toshow.numpy()
-
 class LeniaMC(Automaton):
     """
         Generalized Lenia-like automaton.
@@ -121,21 +85,6 @@ class LeniaMC(Automaton):
         self.norm_weights()
         self.register_buffer('kernel',torch.zeros((self.k_size,self.k_size)))
         self.kernel = self.compute_kernel() # (3,3,h, w)
-
-        # Uncomment to show kernel
-        #showTens(self.kernel.cpu().detach()*100)
-        
-        x = np.arange(0,1,0.01)
-
-        # Uncomment to show growth functions
-        # x = np.arange(0,1,0.01)
-        # fig, axs = plt.subplots(3, 3)
-        # RGB = ['R', 'G', 'B']
-        # for i in range(3):
-        #     for j in range(3):
-        #         axs[i,j].plot(x, 2*np.exp(-((x-self.mu[i][j].item())/self.sigma[i][j].item())**2/2)-1)
-        #         axs[i,j].set_title('Growth : ' + RGB[i] + '->' +RGB[j])
-        # fig.show()
 
     def norm_weights(self):
         # Normalizing the weights
@@ -325,22 +274,23 @@ class BatchLeniaMC(DevModule):
         Batched Multi-channel lenia, to run batch_size worlds in parallel !
         Does not support live drawing in pygame, mayble will later.
     """
-    def __init__(self, size, dt, params=None, state_init = None, device='cpu' ):
+    def __init__(self, size, dt, num_channels=3, params=None, state_init = None, device='cpu' ):
         """
             Initializes automaton.  
 
             Args :
                 size : (B,H,W) of ints, size of the automaton and number of batches
                 dt : time-step used when computing the evolution of the automaton
+                num_channels : int, number of channels (C) in the automaton
                 params : dict of tensors containing the parameters. If none, generates randomly
                     keys-values : 
                     'k_size' : odd int, size of kernel used for computations
-                    'mu' : (B,3,3) tensor, mean of growth functions
-                    'sigma' : (B,3,3) tensor, standard deviation of the growth functions
-                    'beta' :  (B,3,3, # of rings) float, max of the kernel rings 
-                    'mu_k' : (B,3,3, # of rings) [0,1.], location of the kernel rings
-                    'sigma_k' : (B,3,3, # of rings) float, standard deviation of the kernel rings
-                    'weights' : (B,3,3) float, weights for the growth weighted sum
+                    'mu' : (B,C,C) tensor, mean of growth functions
+                    'sigma' : (B,C,C) tensor, standard deviation of the growth functions
+                    'beta' :  (B,C,C, # of rings) float, max of the kernel rings 
+                    'mu_k' : (B,C,C, # of rings) [0,1.], location of the kernel rings
+                    'sigma_k' : (B,C,C, # of rings) float, standard deviation of the kernel rings
+                    'weights' : (B,C,C) float, weights for the growth weighted sum
                 device : str, device 
         """
         super().__init__()
@@ -348,12 +298,13 @@ class BatchLeniaMC(DevModule):
 
         self.batch= size[0]
         self.h, self.w  = size[1:]
+        self.C = num_channels
         # 0,1,2,3 of the first dimension are the N,W,S,E directions
         if(params is None):
-            params = gen_batch_params(self.batch,device)
+            params = gen_batch_params(self.batch,device,num_channels=self.C)
         self.k_size = params['k_size'] # kernel sizes (same for all)
 
-        self.register_buffer('state',torch.rand((self.batch,3,self.h,self.w)))
+        self.register_buffer('state',torch.rand((self.batch,self.C,self.h,self.w)))
 
         if(state_init is None):
             self.set_init_fractal()
@@ -361,8 +312,8 @@ class BatchLeniaMC(DevModule):
             self.state = state_init.to(self.device)
 
         self.dt = dt
-        # Buffer for all parameters since we do not require_grad for them :
 
+        # Buffer for all parameters since we do not require_grad for them :
         self.register_buffer('mu', params['mu']) # mean of the growth functions (3,3)
         self.register_buffer('sigma', params['sigma']) # standard deviation of the growths functions (3,3)
         self.register_buffer('beta',params['beta']) # max of the kernel rings (3,3, # of rings)
@@ -377,19 +328,21 @@ class BatchLeniaMC(DevModule):
 
     def update_params(self, params):
         """
-            Updates the parameters of the automaton. Changes batch size to match one of provided params.
+            Updates some or all parameters of the automaton. Changes batch size to match one of provided params (take mu as reference)
         """
-        self.mu = params['mu'] # mean of the growth functions (3,3)
-        self.sigma = params['sigma'] # standard deviation of the growths functions (3,3)
-        self.beta = params['beta']
-        self.mu_k = params['mu_k']
-        self.sigma_k = params['sigma_k']
-        self.weights = params['weights']
-        self.k_size = params['k_size'] # kernel sizes (same for all)
-        self.norm_weights()
-        self.batch = params['mu'].shape[0] # update batch size
+        self.mu = params.get('mu',self.mu) # mean of the growth functions (C,C)
+        self.sigma = params.get('sigma',self.sigma) # standard deviation of the growths functions (C,C)
+        self.beta = params.get('beta',self.beta)
+        self.mu_k = params.get('mu_k',self.mu_k)
+        self.sigma_k = params.get('sigma_k',self.sigma_k)
+        self.weights = params.get('weights',self.weights)
+        self.k_size = params.get('k_size',self.k_size) # kernel sizes (same for all)
 
-        self.kernel = self.compute_kernel() # (B,3,3,h, w)
+        self.norm_weights()
+
+        self.batch = self.mu.shape[0] # update batch size
+        self.kernel = self.compute_kernel() # (B,C,C,h, w)
+
 
 
     def norm_weights(self):
@@ -411,13 +364,14 @@ class BatchLeniaMC(DevModule):
             Sets the initial state of the automaton using perlin noise
         """
         self.state = perlin_fractal((self.batch,self.h,self.w),int(self.k_size*1.5),
-                                    device=self.device,black_prop=0.25,persistence=0.4) 
+                                    device=self.device,black_prop=0.25,num_channels=self.C,persistence=0.4) 
     
     def set_init_perlin(self,wavelength=None):
         if(not wavelength):
             wavelength = self.k_size
         self.state = perlin((self.batch,self.h,self.w),[wavelength]*2,
-                            device=self.device,black_prop=0.25)
+                            device=self.device,num_channels=self.C,black_prop=0.25)
+        
     def kernel_slice(self, r): # r : (k_size,k_size)
         """
             Given a distance matrix r, computes the kernel of the automaton.
@@ -427,20 +381,20 @@ class BatchLeniaMC(DevModule):
         """
 
         r = r[None, None, None,None] #(1,1, 1, 1, k_size, k_size)
-        r = r.expand(self.batch,3,3,self.mu_k[0][0].size()[0],-1,-1) #(B,3,3,#of rings,k_size,k_size)
+        r = r.expand(self.batch,self.C,self.C,self.mu_k[0][0].size()[0],-1,-1) #(B,C,C,#of rings,k_size,k_size)
 
-        mu_k = self.mu_k[..., None, None] # (B,3,3,#of rings,1,1)
-        sigma_k = self.sigma_k[..., None, None]# (B,3,3,#of rings,1,1)
+        mu_k = self.mu_k[..., None, None] # (B,C,C,#of rings,1,1)
+        sigma_k = self.sigma_k[..., None, None]# (B,C,C,#of rings,1,1)
 
-        K = torch.exp(-((r-mu_k)/sigma_k)**2/2) #(B,3,3,#of rings,k_size,k_size)
+        K = torch.exp(-((r-mu_k)/sigma_k)**2/2) #(B,C,C,#of rings,k_size,k_size)
         #print(K.shape)
 
-        beta = self.beta[..., None, None] # (B,3,3,#of rings,1,1)
+        beta = self.beta[..., None, None] # (B,C,C,#of rings,1,1)
 
         K = torch.sum(beta*K, dim = 3)
 
         
-        return K #(B,3,3,k_size, k_size)
+        return K #(B,C,C,k_size, k_size)
     
     def compute_kernel(self):
         """
@@ -450,65 +404,72 @@ class BatchLeniaMC(DevModule):
         X,Y = torch.meshgrid(xyrange, xyrange,indexing='ij')
         r = torch.sqrt(X**2+Y**2)
 
-        K = self.kernel_slice(r) #(B,3,3,k_size,k_size)
+        K = self.kernel_slice(r) #(B,C,C,k_size,k_size)
 
         # Normalize the kernel
-        summed = torch.sum(K, dim = (-1,-2), keepdim=True) #(B,3,3,1,1)
+        summed = torch.sum(K, dim = (-1,-2), keepdim=True) #(B,C,C,1,1)
 
         # Avoid divisions by 0
         summed = torch.where(summed<1e-6,1,summed)
         K /= summed
 
-        return K #(B,3,3,k,k)
+        return K #(B,C,C,k,k)
     
-    def growth(self, u): # u:(B,3,3,H,W)
+    def growth(self, u): # u:(B,C,C,H,W)
         """
             Computes the growth of the automaton given the concentration u.
 
             Args :
-            u : (B,3,3,H,W) tensor of concentrations.
+            u : (B,C,C,H,W) tensor of concentrations.
         """
 
         # Possibly in the future add other growth function using bump instead of guassian
-        mu = self.mu[..., None, None] # (B,3,3,1,1)
-        sigma = self.sigma[...,None,None] # (B,3,3,1,1)
-        mu = mu.expand(-1,-1,-1, self.h, self.w) # (B,3,3,H,W)
-        sigma = sigma.expand(-1,-1,-1, self.h, self.w) # (B,3,3,H,W)
+        mu = self.mu[..., None, None] # (B,C,C,1,1)
+        sigma = self.sigma[...,None,None] # (B,C,C,1,1)
+        mu = mu.expand(-1,-1,-1, self.h, self.w) # (B,C,C,H,W)
+        sigma = sigma.expand(-1,-1,-1, self.h, self.w) # (B,C,C,H,W)
 
-        return 2*torch.exp(-((u-mu)**2/(sigma)**2)/2)-1 #(B,3,3,H,W)
+        return 2*torch.exp(-((u-mu)**2/(sigma)**2)/2)-1 #(B,C,C,H,W)
 
 
-    def step(self):
+    def step(self, discrete_g = None):
         """
             Steps the automaton state by one iteration.
+
+            Args :
+            discrete_g : 2-uple of floats, min and max values, when using 'discrete' growth.
+            If None, will use the normal growth function.
         """
         # Shenanigans to make all the convolutions at once.
-        kernel_eff = self.kernel.reshape([self.batch*9,1,self.k_size,self.k_size])#(B*9,1,k,k)
+        kernel_eff = self.kernel.reshape([self.batch*self.C*self.C,1,self.k_size,self.k_size])#(B*C^2,1,k,k)
 
-        U = self.state.reshape(1,self.batch*3,self.h,self.w) # (1,B*3,H,W)
-        U = F.pad(U, [(self.k_size-1)//2]*4, mode = 'circular') # (1,B*3,H+pad,W+pad)
+        U = self.state.reshape(1,self.batch*self.C,self.h,self.w) # (1,B*C,H,W)
+        U = F.pad(U, [(self.k_size-1)//2]*4, mode = 'circular') # (1,B*C,H+pad,W+pad)
         
-        U = F.conv2d(U, kernel_eff, groups=3*self.batch).squeeze(1) #(B*9,1,H,W) squeeze to (B*9,H,W)
-        U = U.reshape(self.batch,3,3,self.h,self.w) # (B,3,3,H,W)
+        U = F.conv2d(U, kernel_eff, groups=self.C*self.batch).squeeze(1) #(B*C^2,1,H,W) squeeze to (B*9,H,W)
+        U = U.reshape(self.batch,self.C,self.C,self.h,self.w) # (B,C,C,H,W)
 
-        # assert (self.h,self.w) == (self.state.shape[2], self.state.shape[3])
-        
-        weights = self.weights[...,None, None] # (B,3,3,1,1)
-        weights = weights.expand(-1,-1, -1, self.h,self.w) # (B,3,3,H,W)
+        assert (self.h,self.w) == (self.state.shape[2], self.state.shape[3])
+        if(discrete_g is None):
+            weights = self.weights[...,None, None] # (B,C,C,1,1)
+            weights = weights.expand(-1,-1, -1, self.h,self.w) # (B,C,C,H,W)
 
-        dx = (self.growth(U)*weights).sum(dim=1) #(B,3,H,W)
+            dx = (self.growth(U)*weights).sum(dim=1) #(B,C,H,W)
+        else :
+            dx = ((U > discrete_g[0]) & (U < discrete_g[1])).float()
+            dx = dx * 2 - 1
 
         self.state = torch.clamp(self.state + self.dt*dx, 0, 1)     
-    
+
     def mass(self):
         """
             Computes average 'mass' of the automaton for each channel
 
             returns :
-            mass : (B,3) tensor, mass of each channel
+            mass : (B,C) tensor, mass of each channel
         """
 
-        return self.state.mean(dim=(-1,-2)) # (B,3) mean mass for each color
+        return self.state.mean(dim=(-1,-2)) # (B,C) mean mass for each color
 
     def draw(self):
         """
@@ -517,11 +478,19 @@ class BatchLeniaMC(DevModule):
             but still 'paint' the state and get feedback.
         """
         assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
-        toshow= self.state[0].permute((2,1,0)) #(W,H,3)
+        toshow= self.state[0].permute((2,1,0)) #(W,H,C)
 
+        if(self.C==1):
+            toshow = toshow.expand(-1,-1,3)
+        elif(self.C==2):
+            toshow = torch.cat([toshow,torch.zeros_like(toshow)],dim=-1)
+        else :
+            toshow = toshow[:,:,:3]
+    
         self._worldmap= toshow.cpu().numpy()   
     
         
     @property
     def worldmap(self):
         return (255*self._worldmap).astype(dtype=np.uint8)
+    
