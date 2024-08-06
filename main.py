@@ -4,8 +4,8 @@
 import torch
 import pygame
 from modules.Camera import Camera
-from modules.Automaton import *
-from modules.utils.main_utils import *
+from modules.Automaton import BatchLeniaMC, DiscreteLenia
+from modules.utils.main_utils import compute_ker, load_params, around_params
 import cv2
 import pickle as pk
 from batch_finder import param_generator
@@ -13,15 +13,14 @@ from modules.utils.b_finder_utils import param_batch_to_list
 import numpy as np, os, random
 from torchenhanced.util import showTens
 #============================== PARAMETERS ==========================================================
-device = 'cuda:0' # Device on which to run the automaton
-W,H = 400,600 # Size of the automaton
+device = 'cuda' # Device on which to run the automaton
+W,H = 300,300 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 1
 
 interesting_dir = os.path.join('data','latest') # Directory containing the parameters to load when pressing 'm'
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
 #===========================DO NOT MODIFY BELOW THIS LINE===========================================
-
 
 param_gen = lambda dev: param_generator(1,num_channels=num_channels,device=dev)
 
@@ -45,10 +44,11 @@ else :
 
 print(params['mu'].shape)   
 # Initialize the automaton
-auto = BatchLeniaMC((1,H,W), dt, params=params, num_channels=num_channels, device=device)
+# auto = BatchLeniaMC((1,H,W), dt, params=params, num_channels=num_channels, device=device)
+auto = DiscreteLenia((1,H,W), discretization=13, params=None ,device=device)
 auto.to(device)
-auto.update_params(params)
-kern = compute_ker(auto, device)
+# auto.update_params(params)
+# kern = compute_ker(auto, device)
 
 # Initialize the pygame screen 
 pygame.init()
@@ -89,20 +89,24 @@ while running:
         if event.type == pygame.KEYDOWN:
             if(event.key == pygame.K_n):
                 """ New random parameters"""
-                params = param_gen(device)
+                # params = param_gen(device)
+                params = auto.gen_batch_params(auto.device)
                 auto.update_params(params)
-                kern = compute_ker(auto, device) 
+                # kern = compute_ker(auto, device) 
             if(event.key == pygame.K_u):
                 """ Variate around parameters"""
                 params = around_params(params, device)
                 auto.update_params(params)
-                kern = compute_ker(auto, device) 
+                # kern = compute_ker(auto, device) 
             if(event.key == pygame.K_i):
                 auto.set_init_fractal()
                 n_steps=0
             if(event.key == pygame.K_j):
-                auto.set_init_perlin()
+                auto.set_init_perlin(wavelength=40)
                 n_steps=0
+            if(event.key == pygame.K_k):
+                sq_size = random.randint(5,min(W,H))
+                auto.set_init_perlin(square_size=sq_size)
             if(event.key == pygame.K_m):
                 n_steps=0
                 # Load random interesting param
@@ -113,7 +117,7 @@ while running:
                 params = load_params(os.path.join(interesting_dir,file),make_batch=True,device=device)
 
                 auto.update_params(params)
-                kern = compute_ker(auto, device) 
+                # kern = compute_ker(auto, device) 
             if(event.key == pygame.K_s):
                 # Save the current parameters :
                 para = auto.get_params()
@@ -146,10 +150,10 @@ while running:
     
     #Retrieve the world_state from automaton
     world_state = auto.worldmap
-    if display_kernel == True:
-        world_state[:auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[0].cpu()
-        world_state[auto.k_size:2*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[1].cpu()  
-        world_state[2*auto.k_size:3*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[2].cpu()  
+    # if display_kernel == True:
+    #     world_state[:auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[0].cpu()
+    #     world_state[auto.k_size:2*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[1].cpu()  
+    #     world_state[2*auto.k_size:3*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[2].cpu()  
 
     #Make the viewable surface.
     surface = pygame.surfarray.make_surface(world_state)

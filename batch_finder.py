@@ -75,6 +75,20 @@ def param_generator(batch_size, num_channels = 3,device='cpu'):
     return params
 
 
+def discri_param_gen(batch_size, device='cpu'):
+    mu = 0.5*torch.rand((batch_size,1), device=device)
+    sigma = 0.05*torch.rand_like(mu)+1e-5
+            
+
+    params = {
+        'k_size' : 27, 
+        'mu':  mu ,
+        'sigma' : sigma,
+        'mu_k' : torch.full((batch_size,), fill_value=0.5, device=device),
+        'sigma_k' : torch.full((batch_size,),fill_value=0.15, device=device),
+    }
+    
+    return params
 
 #=========================== DO NOT MODIFY BELOW THIS LINE ===========================================
 if __name__=='__main__':

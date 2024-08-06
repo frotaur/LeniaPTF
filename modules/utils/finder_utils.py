@@ -102,7 +102,6 @@ def interest_finder(W,H, dt, N_steps, params_d, params_a, refinement, threshold,
 
     return t_crit
 
-
 def hash_dict(d):
     """
         Produces hash for dictionary parameters.
