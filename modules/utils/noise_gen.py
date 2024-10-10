@@ -1,6 +1,5 @@
 import torch
 import numpy as np, math
-import perlin_numpy as pnp
 from pyperlin import FractalPerlin2D
 
 def perlin(shape:tuple, wavelengths:tuple, num_channels=3, black_prop:float=0.3,device='cpu'):

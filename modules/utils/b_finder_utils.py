@@ -278,15 +278,11 @@ def save_param(batch_folder,indiv_folder,params):
     batch_size = params['mu'].shape[0]
 
     if(batch_size>1):
-        f = open(os.path.join(batch_folder,name+'.pk'), "wb") 
-        pk.dump(params,f) # Save the resulting parameter batch
-        f.close() 
+        torch.save(params,os.path.join(batch_folder,name+'.pt')) 
 
     mid_params_list = param_batch_to_list(params) # Unbatched list of dicts
     for j in range(len(mid_params_list)):
-        f = open(os.path.join(indiv_folder,name[:-3]+f'{j:02d}'+'.pk'), "wb") 
-        pk.dump(mid_params_list[j],f)
-        f.close()
+        torch.save(mid_params_list[j],os.path.join(indiv_folder,name[:-3]+f'{j:02d}'+'.pt'))
     
     return os.path.join(batch_folder,name+'.pk') 
 

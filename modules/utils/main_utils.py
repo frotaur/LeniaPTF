@@ -36,20 +36,31 @@ def gen_params(device, num_channels=3):
     return params
 
 def gen_batch_params(batch_size,device='cpu', num_channels=3):
-    """ Generates batch parameters."""
+    """ 
+        Generates reasonably random parameters for Multi-channel lenia.
+        
+        Args :
+        batch_size : batch size
+        device : 'cpu' or 'cuda:i', i integer
+        num_channel : number of channels in Lenia
+    """
+    # Growth function parameters :
+    # G_{ij}(x) = 2*e^(-(x-mu_ij)^2/2sigma_ij^2)-1
+
     mu = torch.rand((batch_size,num_channels,num_channels), device=device)
     sigma = mu/(3*np.sqrt(2*np.log(2)))*(1+ (torch.ones_like(mu)-2*torch.rand_like(mu)))
         
 
     params = {
-        'k_size' : 25, 
-        'mu':  mu ,
-        'sigma' : sigma,
+        'k_size' : 25, # size, in pixels, of the Lenia kernel
+        'mu':  mu , # (B,C,C)
+        'sigma' : sigma, # (B,C,C) 
         'beta' : torch.rand((batch_size,num_channels,num_channels,3), device=device),
         'mu_k' : torch.rand((batch_size,num_channels,num_channels,3), device=device),
         'sigma_k' : torch.rand((batch_size,num_channels,num_channels,3), device=device),
         'weights' : torch.rand((batch_size,num_channels,num_channels), device = device) # element i, j represents contribution from channel i to channel j
     }
+
     return params
 
 def around_params(params,device):
@@ -83,37 +94,33 @@ def load_params(file, make_batch=False,device='cpu'):
             device : device on which to load the parameters
     """
 
-    f = open(file, 'rb')
-    dico = pk.load(f)
-    f.close()
+    dico = torch.load(file, map_location=device)
     params = {}
 
     mushape = dico['mu'].shape
     if(len(mushape)==3):
         make_batch = False
 
-    if len(dico) > 3: 
-        # Pure parameter dictionary
-        if('k_size' in dico.keys()):
-            params['k_size'] = dico['k_size']
-            print('loaded k_size : ', params['k_size'])
-        else :
-            params['k_size'] = 31
-        
-        for key in dico.keys():
-            if(key!='k_size'):         
-                if(not make_batch):
-                    params[key] = dico[key].to(device)
-                else:
-                    params[key] = dico[key][None,...].to(device)
-
-            
+    # Pure parameter dictionary
+    if('k_size' in dico.keys()):
+        params['k_size'] = dico['k_size']
+        print('loaded k_size : ', params['k_size'])
+    else :
+        params['k_size'] = 31
+    
+    for key in dico.keys():
+        if(key!='k_size'):         
+            if(not make_batch):
+                params[key] = dico[key].to(device)
+            else:
+                params[key] = dico[key][None,...].to(device)
 
         return params
-    else :
-        raise ValueError('NOT USING TCRIT IN THE PAPER')
-    
+        
 def compute_ker(auto, device):
+    """
+        Prepares the kernel and translate it to an RGB image for viewing.
+    """
     kern= auto.compute_kernel() # (1,C,C, k_size, k_size)
     if(kern.shape[1]==1):
         kern = kern.expand(-1,3,3,-1,-1)

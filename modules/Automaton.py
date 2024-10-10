@@ -4,275 +4,10 @@ from torchenhanced import DevModule
 from .utils.noise_gen import perlin,perlin_fractal
 from .utils.main_utils import gen_batch_params,gen_params
 
-class Automaton(DevModule) :
-    """
-        Class that internalizes the rules and evolution of 
-        the cellular automaton at hand. It has a step function
-        that makes one timestep of the evolution. By convention,
-        and to keep in sync with pygame, the world tensor has shape
-        (W,H,3). It contains float values between 0 and 1, which
-        are (automatically) mapped to 0 255 when returning output, 
-        and describes how the world is 'seen' by an observer.
-
-        Parameters :
-        size : 2-uple (W,H)
-            Shape of the CA world
-        device : str
-    """
-
-    def __init__(self,size, device='cpu'):
-        super().__init__()
-        self.w, self.h  = size
-        self.size= size
-        # This self._worldmap should be changed in the step function.
-        # It should contains floats from 0 to 1 of RGB values.
-        self._worldmap = np.random.uniform(( self.w,self.h,3))
-        self.to(device)
-        
-
-    
-
-    def step(self):
-        return NotImplementedError('Please subclass "Automaton" class, and define self.step')
-    
-    @property
-    def worldmap(self):
-        return (255*self._worldmap).astype(dtype=np.uint8)
-
-class LeniaMC(Automaton):
-    """
-        Generalized Lenia-like automaton.
-
-        Args :
-        size : tuple of ints, size of the automaton
-        dt : time-step used when computing the evolution of the automaton
-        params : dict of tensors containing the parameters.
-            keys-values : 
-            'k_size' : odd int, size of kernel used for computations
-            'mu' : (3,3) tensor, mean of growth functions
-            'sigma' : (3,3) tensor, standard deviation of the growth functions
-            'beta' :  (3,3, # of rings) float, max of the kernel rings 
-            'mu_k' : (3,3, # of rings) [0,1.], location of the kernel rings
-            'sigma_k' : (3,3, # of rings) float, standard deviation of the kernel rings
-            'weights' : (3,3) float, weights for the growth weighted sum
-        device : str, device 
-    """
-    
-    def __init__(self, size, dt, params=None, state_init = None, device='cpu' ):
-        super().__init__(size, device)
-        if(params is None):
-            params = gen_params(device)
-        # 0,1,2,3 of the first dimension are the N,W,S,E directions
-        self.k_size = params['k_size'] # kernel sizes (same for all)
-
-        self.register_buffer('state',torch.rand((3,self.h,self.w)))
-
-        if(state_init is None):
-            self.set_init_fractal()
-        else:
-            self.state = state_init.to(self.device)
-
-        self.dt = dt
-        # Buffer for all parameters since we do not require_grad for them :
-
-        self.register_buffer('mu', params['mu']) # mean of the growth functions (3,3)
-        self.register_buffer('sigma', params['sigma']) # standard deviation of the growths functions (3,3)
-        self.register_buffer('beta',params['beta']) # max of the kernel rings (3,3, # of rings)
-        self.register_buffer('mu_k',params['mu_k'])# mean of the kernel gaussians (3,3, # of rings)
-        self.register_buffer('sigma_k',params['sigma_k'])# standard deviation of the kernel gaussians (3,3, # of rings)
-        self.register_buffer('weights',params['weights']) # weigths for the growth weighted sum (3,3)
-
-        self.norm_weights()
-        self.register_buffer('kernel',torch.zeros((self.k_size,self.k_size)))
-        self.kernel = self.compute_kernel() # (3,3,h, w)
-
-    def norm_weights(self):
-        # Normalizing the weights
-        N = self.weights.sum(dim=0, keepdim = True)
-        self.weights = torch.where(N > 1.e-6, self.weights/N, 0)
-    
-    def update_params(self, params):
-        """
-            Updates the parameters of the automaton.
-        """
-        # Add kernel size
-        self.k_size = params['k_size'] # kernel sizes (same for all)
-        # Possibly add class 'PArams' to hold all parameter and implement binary operators
-        self.mu = params['mu'] # mean of the growth functions (3,3)
-        self.sigma = params['sigma'] # standard deviation of the growths functions (3,3)
-        self.beta = params['beta']
-        self.mu_k = params['mu_k']
-        self.sigma_k = params['sigma_k']
-        self.weights = params['weights']
-        self.norm_weights()
-
-        self.kernel = self.compute_kernel() # (3,3,h, w)
-
-
-    def get_params(self):
-        """
-            Get the parameter dictionary which defines the automaton
-        """
-        # Add output of kernel size
-        params = dict(mu = self.mu, sigma = self.sigma, beta = self.beta,
-                       mu_k = self.mu_k, sigma_k = self.sigma_k, weights = self.weights)
-        
-        return params
-
-
-    def set_init_fractal(self):
-        """
-            Sets the initial state of the automaton using perlin noise
-        """
-        self.state = perlin_fractal((1,self.h,self.w),int(self.k_size*1.5),device=self.device,black_prop=0.25,persistence=0.4)[0]    
-    
-    def set_init_perlin(self,wavelength=None):
-        if(not wavelength):
-            wavelength = self.k_size
-        self.state = perlin((1,self.h,self.w),[wavelength]*2,device=self.device,black_prop=0.25)[0]
-    
-    def kernel_slice(self, r): # r : (k_size,k_size)
-        """
-            Given a distance matrix r, computes the kernel of the automaton.
-
-            Args :
-            r : (k_size,k_size), value of the radius for each location around the center of the kernel
-        """
-        #K = torch.ones((3,3,self.k_size, self.k_size))
-        r = r[None, None, None] #(1, 1, 1, k_size, k_size)
-        r = r.expand(3,3,self.mu_k[0][0].size()[0],-1,-1) #(3,3,#of rings,k_size,k_size)
-
-        mu_k = self.mu_k[:,:,:, None, None]
-        sigma_k = self.sigma_k[:,:,:, None, None]
-
-        # K = torch.exp(-((r-mu_k)/2)**2/sigma_k) #(3,3,#of rings,k_size,k_size)
-        K = torch.exp(-((r-mu_k)/sigma_k)**2/2) 
-        #print(K.shape)
-
-        beta = self.beta[:,:,:, None, None]
-
-        K = torch.sum(beta*K, dim = 2)
-
-        
-        return K #(3,3,k_size, k_size)
-    
-    def compute_kernel(self):
-        """
-            Computes the kernel given the parameters.
-        """
-        xyrange = torch.arange(-1, 1+0.00001, 2/(self.k_size-1)).to(self.device)
-        X,Y = torch.meshgrid(xyrange, xyrange,indexing='ij')
-        r = torch.sqrt(X**2+Y**2)
-
-        K = self.kernel_slice(r) #(3,3,k_size,k_size)
-
-        # Normalize the kernel
-        summed = torch.sum(K, dim = (2,3), keepdim=True) #(3,3,1,1)
-
-        # Avoid divisions by 0
-        summed = torch.where(summed<1e-6,1,summed)
-        K /= summed
-
-        return K #(3,3,k,k)
-    
-    def growth(self, u): # u:(3,3,H,W)
-        """
-            Computes the growth of the automaton given the concentration u.
-
-            Args :
-            u : (3,3,H,W) tensor of concentrations.
-        """
-
-        # Possibly in the future add other growth function using bump instead of guassian
-        mu = self.mu[:,:, None, None]
-        sigma = self.sigma[:,:,None,None]
-        mu = mu.expand(-1,-1, self.h, self.w)
-        sigma = sigma.expand(-1,-1, self.h, self.w)
-
-        return 2*torch.exp(-((u-mu)**2/(sigma)**2)/2)-1 #(3,3,H,W)
-
-
-    def step(self):
-        """
-            Steps the automaton state by one iteration.
-        """
-        # Shenanigans to make all the convolutions at once.
-        kernel_eff = self.kernel.reshape([9,1,self.k_size,self.k_size])#(9,1,k,k)
-        # kernel_eff = torch.zeros_like(kernel_eff)
-        # kernel_eff[]
-
-        U = F.pad(self.state[None], [(self.k_size-1)//2]*4, mode = 'circular') # (1,3,H+pad,W+pad)
-        U = F.conv2d(U, kernel_eff, groups=3).squeeze(0) #(9,H,W)
-        U = U.reshape(3,3,self.h,self.w)
-
-        assert (self.h,self.w) == (self.state.shape[1], self.state.shape[2])
-        # Maybe change to weighted sum with the weights being also parameters  (done)
-        # factor = torch.eye(3)[...,None,None].to(self.device) #(3,3)
- 
-        weights = self.weights [...,None, None]
-        weights = weights.expand(-1, -1, self.h,self.w) # 
-
-        # print((U*weights).sum(dim=(2,3)))
-        #print('Selfgrowth shape ', self.growth(U).shape)
-        #print((self.growth(U)*weights).sum(dim=(2,3)))
-        dx = (self.growth(U)*weights).sum(dim=0) #(3,H,W)
-        
-        #showTens(dx.cpu())
-
-        self.state = torch.clamp( self.state + self.dt*dx, 0, 1) 
-
-    def evolve_state(self,state):
-        kernel_eff = self.kernel.reshape([9,1,self.k_size,self.k_size])#(9,1,k,k)
-        # kernel_eff = torch.zeros_like(kernel_eff)
-        # kernel_eff[]
-        U = F.pad(self.state[None], [(self.k_size-1)//2]*4, mode = 'circular')
-        U = F.conv2d(U, kernel_eff, groups=3).squeeze(0) #(9,H,W)
-        U = U.reshape(3,3,self.h,self.w)
-
-        assert (self.h,self.w) == (state.shape[1], state.shape[2])
-        # Maybe change to weighted sum with the weights being also parameters  (done)
-        # factor = torch.eye(3)[...,None,None].to(self.device) #(3,3)
-        N = self.weights.sum(dim=0, keepdim = True)
-        # print(N)
-        weights = torch.where(N > 1.e-6, self.weights/N, 0)
-        # print(weights)
-        weights = weights [...,None, None]
-        weights = weights.expand(-1, -1, self.h,self.w)
-
-        # print((U*weights).sum(dim=(2,3)))
-        #print('Selfgrowth shape ', self.growth(U).shape)
-        #print((self.growth(U)*weights).sum(dim=(2,3)))
-        dx = (self.growth(U)*weights).sum(dim=0) #(3,H,W)
-        dx.to(self.device)
-        #showTens(dx.cpu())
-
-        return torch.clamp(state + self.dt*dx, 0, 1)
-    
-    def draw(self):
-        """
-            Draws the worldmap from state.
-            Separate from step so that we can freeze time,
-            but still 'paint' the state and get feedback.
-        """
-        
-        toshow= self.state.permute((2,1,0)) #(W,H,3)
-
-        self._worldmap= toshow.cpu().numpy()   
-        
-    def mass(self):
-        """
-            Computes average 'mass' of the automaton for each channel
-
-            returns :
-            mass : (3,) tensor, mass of each channel
-        """
-
-        return self.state.mean(dim=(1,2)) # (3, ) mean mass for each color
-       
 class BatchLeniaMC(DevModule):
     """
         Batched Multi-channel lenia, to run batch_size worlds in parallel !
-        Does not support live drawing in pygame, mayble will later.
+        Does not support live drawing in pygame, maybe will later.
     """
     def __init__(self, size, dt, num_channels=3, params=None, state_init = None, device='cpu' ):
         """
@@ -299,39 +34,42 @@ class BatchLeniaMC(DevModule):
         self.batch= size[0]
         self.h, self.w  = size[1:]
         self.C = num_channels
-        # 0,1,2,3 of the first dimension are the N,W,S,E directions
+
         if(params is None):
+            # Generates random parameters
             params = gen_batch_params(self.batch,device,num_channels=self.C)
-        self.k_size = params['k_size'] # kernel sizes (same for all)
+
+        self.k_size = params['k_size'] # kernel sizes (same for all) MUST BE ODD !!!
 
         self.register_buffer('state',torch.rand((self.batch,self.C,self.h,self.w)))
 
         if(state_init is None):
-            self.set_init_fractal()
+            self.set_init_fractal() # Fractal perlin init
         else:
-            self.state = state_init.to(self.device)
+            self.state = state_init.to(self.device) # Specific init
 
         self.dt = dt
 
         # Buffer for all parameters since we do not require_grad for them :
-        self.register_buffer('mu', params['mu']) # mean of the growth functions (3,3)
-        self.register_buffer('sigma', params['sigma']) # standard deviation of the growths functions (3,3)
-        self.register_buffer('beta',params['beta']) # max of the kernel rings (3,3, # of rings)
-        self.register_buffer('mu_k',params['mu_k'])# mean of the kernel gaussians (3,3, # of rings)
-        self.register_buffer('sigma_k',params['sigma_k'])# standard deviation of the kernel gaussians (3,3, # of rings)
-        self.register_buffer('weights',params['weights']) # raw weigths for the growth weighted sum (3,3)
+        self.register_buffer('mu', params['mu']) # mean of the growth functions (B,C,C)
+        self.register_buffer('sigma', params['sigma']) # standard deviation of the growths functions (B,C,C)
+        self.register_buffer('beta',params['beta']) # max of the kernel rings (B,C,C, # of rings)
+        self.register_buffer('mu_k',params['mu_k'])# mean of the kernel gaussians (B,C,C, # of rings)
+        self.register_buffer('sigma_k',params['sigma_k'])# standard deviation of the kernel gaussians (B,C,C, # of rings)
+        self.register_buffer('weights',params['weights']) # raw weigths for the growth weighted sum (B,C,C)
 
         self.norm_weights()
         self.register_buffer('kernel',torch.zeros((self.k_size,self.k_size)))
-        self.kernel = self.compute_kernel() # (3,3,h, w)
+        self.kernel = self.compute_kernel() # (B,C,C,h, w)
 
 
     def update_params(self, params):
         """
-            Updates some or all parameters of the automaton. Changes batch size to match one of provided params (take mu as reference)
+            Updates some or all parameters of the automaton. 
+            Changes batch size to match the one of provided params (take mu as reference)
         """
-        self.mu = params.get('mu',self.mu) # mean of the growth functions (C,C)
-        self.sigma = params.get('sigma',self.sigma) # standard deviation of the growths functions (C,C)
+        self.mu = params.get('mu',self.mu)
+        self.sigma = params.get('sigma',self.sigma)
         self.beta = params.get('beta',self.beta)
         self.mu_k = params.get('mu_k',self.mu_k)
         self.sigma_k = params.get('sigma_k',self.sigma_k)
@@ -341,12 +79,16 @@ class BatchLeniaMC(DevModule):
         self.norm_weights()
 
         self.batch = self.mu.shape[0] # update batch size
-        self.kernel = self.compute_kernel() # (B,C,C,h, w)
+        self.kernel = self.compute_kernel() # (B,C,C,h,w)
 
     
     def norm_weights(self):
+        """
+            Normalizes the relative weight sum of the growth functions
+            (A_j(t+dt) = A_j(t) + dt G_{ij}w_ij), here we enforce sum_i w_ij = 1
+        """
         # Normalizing the weights
-        N = self.weights.sum(dim=1, keepdim = True) # (B,3,3)
+        N = self.weights.sum(dim=1, keepdim = True) # (B,1,C)
         self.weights = torch.where(N > 1.e-6, self.weights/N, 0)
 
     def get_params(self):
@@ -360,27 +102,34 @@ class BatchLeniaMC(DevModule):
 
     def set_init_fractal(self):
         """
-            Sets the initial state of the automaton using perlin noise
+            Sets the initial state of the automaton using fractal perlin noise.
+            Max wavelength is k_size*1.5, chosen a bit randomly
         """
         self.state = perlin_fractal((self.batch,self.h,self.w),int(self.k_size*1.5),
                                     device=self.device,black_prop=0.25,num_channels=self.C,persistence=0.4) 
     
     def set_init_perlin(self,wavelength=None):
+        """
+            Sets initial state using one-wavelength perlin noise.
+            Default wavelength is 2*K_size
+        """
         if(not wavelength):
             wavelength = self.k_size
         self.state = perlin((self.batch,self.h,self.w),[wavelength]*2,
                             device=self.device,num_channels=self.C,black_prop=0.25)
         
-    def kernel_slice(self, r): # r : (k_size,k_size)
+    def kernel_slice(self, r):
         """
             Given a distance matrix r, computes the kernel of the automaton.
+            In other words, compute the kernel 'cross-section' since we always assume
+            rotationally symmetric kernel
 
             Args :
-            r : (k_size,k_size), value of the radius for each location around the center of the kernel
+            r : (k_size,k_size), value of the radius for each pixel of the kernel
         """
-
+        # Expand radius to match expected kernel shape
         r = r[None, None, None,None] #(1,1, 1, 1, k_size, k_size)
-        r = r.expand(self.batch,self.C,self.C,self.mu_k[0][0].size()[0],-1,-1) #(B,C,C,#of rings,k_size,k_size)
+        r = r.expand(self.batch,self.C,self.C,self.mu_k.shape[3],-1,-1) #(B,C,C,#of rings,k_size,k_size)
 
         mu_k = self.mu_k[..., None, None] # (B,C,C,#of rings,1,1)
         sigma_k = self.sigma_k[..., None, None]# (B,C,C,#of rings,1,1)
@@ -389,15 +138,14 @@ class BatchLeniaMC(DevModule):
         #print(K.shape)
 
         beta = self.beta[..., None, None] # (B,C,C,#of rings,1,1)
-
-        K = torch.sum(beta*K, dim = 3)
+        K = torch.sum(beta*K, dim = 3) #
 
         
         return K #(B,C,C,k_size, k_size)
     
     def compute_kernel(self):
         """
-            Computes the kernel given the parameters.
+            Computes the kernel given the current parameters.
         """
         xyrange = torch.arange(-1, 1+0.00001, 2/(self.k_size-1)).to(self.device)
         X,Y = torch.meshgrid(xyrange, xyrange,indexing='ij')
@@ -405,14 +153,14 @@ class BatchLeniaMC(DevModule):
 
         K = self.kernel_slice(r) #(B,C,C,k_size,k_size)
 
-        # Normalize the kernel
+        # Normalize the kernel, s.t. integral(K) = 1
         summed = torch.sum(K, dim = (-1,-2), keepdim=True) #(B,C,C,1,1)
 
         # Avoid divisions by 0
         summed = torch.where(summed<1e-6,1,summed)
         K /= summed
 
-        return K #(B,C,C,k,k)
+        return K #(B,C,C,k_size,k_size)
     
     def growth(self, u): # u:(B,C,C,H,W)
         """
@@ -434,10 +182,6 @@ class BatchLeniaMC(DevModule):
     def step(self):
         """
             Steps the automaton state by one iteration.
-
-            Args :
-            discrete_g : 2-uple of floats, min and max values, when using 'discrete' growth.
-            If None, will use the normal growth function.
         """
         # Shenanigans to make all the convolutions at once.
         kernel_eff = self.kernel.reshape([self.batch*self.C*self.C,1,self.k_size,self.k_size])#(B*C^2,1,k,k)
@@ -445,7 +189,7 @@ class BatchLeniaMC(DevModule):
         U = self.state.reshape(1,self.batch*self.C,self.h,self.w) # (1,B*C,H,W)
         U = F.pad(U, [(self.k_size-1)//2]*4, mode = 'circular') # (1,B*C,H+pad,W+pad)
         
-        U = F.conv2d(U, kernel_eff, groups=self.C*self.batch).squeeze(1) #(B*C^2,1,H,W) squeeze to (B*9,H,W)
+        U = F.conv2d(U, kernel_eff, groups=self.C*self.batch).squeeze(1) #(B*C^2,1,H,W) squeeze to (B*C^2,H,W)
         U = U.reshape(self.batch,self.C,self.C,self.h,self.w) # (B,C,C,H,W)
 
         assert (self.h,self.w) == (self.state.shape[2], self.state.shape[3])
@@ -453,29 +197,11 @@ class BatchLeniaMC(DevModule):
         weights = self.weights[...,None, None] # (B,C,C,1,1)
         weights = weights.expand(-1,-1, -1, self.h,self.w) # (B,C,C,H,W)
 
+        # Weight normalized growth :
         dx = (self.growth(U)*weights).sum(dim=1) #(B,C,H,W)
 
+        # Apply growth and clamp
         self.state = torch.clamp(self.state + self.dt*dx, 0, 1)     
-
-    def discrete_step(self):
-        """
-            Steps the automaton state by one iteration, in the discrete case
-        """
-        # Shenanigans to make all the convolutions at once.
-        kernel_eff = self.kernel.reshape([self.batch*self.C*self.C,1,self.k_size,self.k_size])#(B*C^2,1,k,k)
-
-        U = self.state.reshape(1,self.batch*self.C,self.h,self.w) # (1,B*C,H,W)
-        U = F.pad(U, [(self.k_size-1)//2]*4, mode = 'circular') # (1,B*C,H+pad,W+pad)
-        
-        U = F.conv2d(U, kernel_eff, groups=self.C*self.batch).squeeze(1) #(B*C^2,1,H,W) squeeze to (B*9,H,W)
-        U = U.reshape(self.batch,self.C,self.C,self.h,self.w) # (B,C,C,H,W)
-
-        assert (self.h,self.w) == (self.state.shape[2], self.state.shape[3])
-
-        dx = ((U > discrete_g[0]) & (U < discrete_g[1])).float()
-        dx = dx * 2 - 1
-
-        self.state = torch.clamp(self.state + self.dt*dx, 0, 1)  
 
     def mass(self):
         """
@@ -489,12 +215,10 @@ class BatchLeniaMC(DevModule):
 
     def draw(self):
         """
-            Draws the worldmap from state.
-            Separate from step so that we can freeze time,
-            but still 'paint' the state and get feedback.
+            Draws the RGB worldmap from state.
         """
         assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
-        toshow= self.state[0].permute((2,1,0)) #(W,H,C)
+        toshow= self.state[0].permute((2,1,0)) # (W,H,C) for pygame
 
         if(self.C==1):
             toshow = toshow.expand(-1,-1,3)
@@ -746,3 +470,272 @@ class DiscreteLenia(DevModule):
     @property
     def worldmap(self):
         return (255*self._worldmap).astype(dtype=np.uint8)
+
+
+class Automaton(DevModule) :
+    """
+        USE DEPRECATED FOR NOW
+        Class that internalizes the rules and evolution of 
+        the cellular automaton at hand. It has a step function
+        that makes one timestep of the evolution. By convention,
+        and to keep in sync with pygame, the world tensor has shape
+        (W,H,3). It contains float values between 0 and 1, which
+        are (automatically) mapped to 0 255 when returning output, 
+        and describes how the world is 'seen' by an observer.
+
+        Parameters :
+        size : 2-uple (W,H)
+            Shape of the CA world
+        device : str
+    """
+
+    def __init__(self,size, device='cpu'):
+        super().__init__()
+        self.w, self.h  = size
+        self.size= size
+        # This self._worldmap should be changed in the step function.
+        # It should contains floats from 0 to 1 of RGB values.
+        self._worldmap = np.random.uniform(( self.w,self.h,3))
+        self.to(device)
+        
+
+    
+
+    def step(self):
+        return NotImplementedError('Please subclass "Automaton" class, and define self.step')
+    
+    @property
+    def worldmap(self):
+        return (255*self._worldmap).astype(dtype=np.uint8)
+
+class LeniaMC(Automaton):
+    """
+        USE DEPRECATED FOR NOW
+        Generalized Lenia-like automaton.
+
+        Args :
+        size : tuple of ints, size of the automaton
+        dt : time-step used when computing the evolution of the automaton
+        params : dict of tensors containing the parameters.
+            keys-values : 
+            'k_size' : odd int, size of kernel used for computations
+            'mu' : (3,3) tensor, mean of growth functions
+            'sigma' : (3,3) tensor, standard deviation of the growth functions
+            'beta' :  (3,3, # of rings) float, max of the kernel rings 
+            'mu_k' : (3,3, # of rings) [0,1.], location of the kernel rings
+            'sigma_k' : (3,3, # of rings) float, standard deviation of the kernel rings
+            'weights' : (3,3) float, weights for the growth weighted sum
+        device : str, device 
+    """
+    
+    def __init__(self, size, dt, params=None, state_init = None, device='cpu' ):
+        super().__init__(size, device)
+        if(params is None):
+            params = gen_params(device)
+        # 0,1,2,3 of the first dimension are the N,W,S,E directions
+        self.k_size = params['k_size'] # kernel sizes (same for all)
+
+        self.register_buffer('state',torch.rand((3,self.h,self.w)))
+
+        if(state_init is None):
+            self.set_init_fractal()
+        else:
+            self.state = state_init.to(self.device)
+
+        self.dt = dt
+        # Buffer for all parameters since we do not require_grad for them :
+
+        self.register_buffer('mu', params['mu']) # mean of the growth functions (3,3)
+        self.register_buffer('sigma', params['sigma']) # standard deviation of the growths functions (3,3)
+        self.register_buffer('beta',params['beta']) # max of the kernel rings (3,3, # of rings)
+        self.register_buffer('mu_k',params['mu_k'])# mean of the kernel gaussians (3,3, # of rings)
+        self.register_buffer('sigma_k',params['sigma_k'])# standard deviation of the kernel gaussians (3,3, # of rings)
+        self.register_buffer('weights',params['weights']) # weigths for the growth weighted sum (3,3)
+
+        self.norm_weights()
+        self.register_buffer('kernel',torch.zeros((self.k_size,self.k_size)))
+        self.kernel = self.compute_kernel() # (3,3,h, w)
+
+    def norm_weights(self):
+        # Normalizing the weights
+        N = self.weights.sum(dim=0, keepdim = True)
+        self.weights = torch.where(N > 1.e-6, self.weights/N, 0)
+    
+    def update_params(self, params):
+        """
+            Updates the parameters of the automaton.
+        """
+        # Add kernel size
+        self.k_size = params['k_size'] # kernel sizes (same for all)
+        # Possibly add class 'PArams' to hold all parameter and implement binary operators
+        self.mu = params['mu'] # mean of the growth functions (3,3)
+        self.sigma = params['sigma'] # standard deviation of the growths functions (3,3)
+        self.beta = params['beta']
+        self.mu_k = params['mu_k']
+        self.sigma_k = params['sigma_k']
+        self.weights = params['weights']
+        self.norm_weights()
+
+        self.kernel = self.compute_kernel() # (3,3,h, w)
+
+
+    def get_params(self):
+        """
+            Get the parameter dictionary which defines the automaton
+        """
+        # Add output of kernel size
+        params = dict(mu = self.mu, sigma = self.sigma, beta = self.beta,
+                       mu_k = self.mu_k, sigma_k = self.sigma_k, weights = self.weights)
+        
+        return params
+
+
+    def set_init_fractal(self):
+        """
+            Sets the initial state of the automaton using perlin noise
+        """
+        self.state = perlin_fractal((1,self.h,self.w),int(self.k_size*1.5),device=self.device,black_prop=0.25,persistence=0.4)[0]    
+    
+    def set_init_perlin(self,wavelength=None):
+        if(not wavelength):
+            wavelength = self.k_size
+        self.state = perlin((1,self.h,self.w),[wavelength]*2,device=self.device,black_prop=0.25)[0]
+    
+    def kernel_slice(self, r): # r : (k_size,k_size)
+        """
+            Given a distance matrix r, computes the kernel of the automaton.
+
+            Args :
+            r : (k_size,k_size), value of the radius for each location around the center of the kernel
+        """
+        #K = torch.ones((3,3,self.k_size, self.k_size))
+        r = r[None, None, None] #(1, 1, 1, k_size, k_size)
+        r = r.expand(3,3,self.mu_k[0][0].size()[0],-1,-1) #(3,3,#of rings,k_size,k_size)
+
+        mu_k = self.mu_k[:,:,:, None, None]
+        sigma_k = self.sigma_k[:,:,:, None, None]
+
+        # K = torch.exp(-((r-mu_k)/2)**2/sigma_k) #(3,3,#of rings,k_size,k_size)
+        K = torch.exp(-((r-mu_k)/sigma_k)**2/2) 
+        #print(K.shape)
+
+        beta = self.beta[:,:,:, None, None]
+
+        K = torch.sum(beta*K, dim = 2)
+
+        
+        return K #(3,3,k_size, k_size)
+    
+    def compute_kernel(self):
+        """
+            Computes the kernel given the parameters.
+        """
+        xyrange = torch.arange(-1, 1+0.00001, 2/(self.k_size-1)).to(self.device)
+        X,Y = torch.meshgrid(xyrange, xyrange,indexing='ij')
+        r = torch.sqrt(X**2+Y**2)
+
+        K = self.kernel_slice(r) #(3,3,k_size,k_size)
+
+        # Normalize the kernel
+        summed = torch.sum(K, dim = (2,3), keepdim=True) #(3,3,1,1)
+
+        # Avoid divisions by 0
+        summed = torch.where(summed<1e-6,1,summed)
+        K /= summed
+
+        return K #(3,3,k,k)
+    
+    def growth(self, u): # u:(3,3,H,W)
+        """
+            Computes the growth of the automaton given the concentration u.
+
+            Args :
+            u : (3,3,H,W) tensor of concentrations.
+        """
+
+        # Possibly in the future add other growth function using bump instead of guassian
+        mu = self.mu[:,:, None, None]
+        sigma = self.sigma[:,:,None,None]
+        mu = mu.expand(-1,-1, self.h, self.w)
+        sigma = sigma.expand(-1,-1, self.h, self.w)
+
+        return 2*torch.exp(-((u-mu)**2/(sigma)**2)/2)-1 #(3,3,H,W)
+
+
+    def step(self):
+        """
+            Steps the automaton state by one iteration.
+        """
+        # Shenanigans to make all the convolutions at once.
+        kernel_eff = self.kernel.reshape([9,1,self.k_size,self.k_size])#(9,1,k,k)
+        # kernel_eff = torch.zeros_like(kernel_eff)
+        # kernel_eff[]
+
+        U = F.pad(self.state[None], [(self.k_size-1)//2]*4, mode = 'circular') # (1,3,H+pad,W+pad)
+        U = F.conv2d(U, kernel_eff, groups=3).squeeze(0) #(9,H,W)
+        U = U.reshape(3,3,self.h,self.w)
+
+        assert (self.h,self.w) == (self.state.shape[1], self.state.shape[2])
+        # Maybe change to weighted sum with the weights being also parameters  (done)
+        # factor = torch.eye(3)[...,None,None].to(self.device) #(3,3)
+ 
+        weights = self.weights [...,None, None]
+        weights = weights.expand(-1, -1, self.h,self.w) # 
+
+        # print((U*weights).sum(dim=(2,3)))
+        #print('Selfgrowth shape ', self.growth(U).shape)
+        #print((self.growth(U)*weights).sum(dim=(2,3)))
+        dx = (self.growth(U)*weights).sum(dim=0) #(3,H,W)
+        
+        #showTens(dx.cpu())
+
+        self.state = torch.clamp( self.state + self.dt*dx, 0, 1) 
+
+    def evolve_state(self,state):
+        kernel_eff = self.kernel.reshape([9,1,self.k_size,self.k_size])#(9,1,k,k)
+        # kernel_eff = torch.zeros_like(kernel_eff)
+        # kernel_eff[]
+        U = F.pad(self.state[None], [(self.k_size-1)//2]*4, mode = 'circular')
+        U = F.conv2d(U, kernel_eff, groups=3).squeeze(0) #(9,H,W)
+        U = U.reshape(3,3,self.h,self.w)
+
+        assert (self.h,self.w) == (state.shape[1], state.shape[2])
+        # Maybe change to weighted sum with the weights being also parameters  (done)
+        # factor = torch.eye(3)[...,None,None].to(self.device) #(3,3)
+        N = self.weights.sum(dim=0, keepdim = True)
+        # print(N)
+        weights = torch.where(N > 1.e-6, self.weights/N, 0)
+        # print(weights)
+        weights = weights [...,None, None]
+        weights = weights.expand(-1, -1, self.h,self.w)
+
+        # print((U*weights).sum(dim=(2,3)))
+        #print('Selfgrowth shape ', self.growth(U).shape)
+        #print((self.growth(U)*weights).sum(dim=(2,3)))
+        dx = (self.growth(U)*weights).sum(dim=0) #(3,H,W)
+        dx.to(self.device)
+        #showTens(dx.cpu())
+
+        return torch.clamp(state + self.dt*dx, 0, 1)
+    
+    def draw(self):
+        """
+            Draws the worldmap from state.
+            Separate from step so that we can freeze time,
+            but still 'paint' the state and get feedback.
+        """
+        
+        toshow= self.state.permute((2,1,0)) #(W,H,3)
+
+        self._worldmap= toshow.cpu().numpy()   
+        
+    def mass(self):
+        """
+            Computes average 'mass' of the automaton for each channel
+
+            returns :
+            mass : (3,) tensor, mass of each channel
+        """
+
+        return self.state.mean(dim=(1,2)) # (3, ) mean mass for each color
+       

@@ -1,10 +1,6 @@
 """
     Script to generate individual videos of the automaton, given saved parameters.
 """
-"""
-    Script to generate individual videos of the automaton, given saved parameters.
-"""
-
 
 
 from torchenhanced.util import saveTensVideo

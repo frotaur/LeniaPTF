@@ -13,12 +13,12 @@ from modules.utils.b_finder_utils import param_batch_to_list
 import numpy as np, os, random
 from torchenhanced.util import showTens
 #============================== PARAMETERS ==========================================================
-device = 'cuda' # Device on which to run the automaton
+device = 'cpu' # Device on which to run the automaton
 W,H = 300,300 # Size of the automaton
 dt = 0.1 # Time step size
-num_channels= 1
+num_channels= 3
 
-interesting_dir = os.path.join('data','latest') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('demo_params') # Directory containing the parameters to load when pressing 'm'
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
 #===========================DO NOT MODIFY BELOW THIS LINE===========================================
 
@@ -28,6 +28,7 @@ param_gen = lambda dev: param_generator(1,num_channels=num_channels,device=dev)
 videos_dir = os.path.join('data','videos')
 
 interesting_dir = os.path.join(interesting_dir,'individual')
+
 remarkable_dir = os.path.join(remarkable_dir,'individual')
 os.makedirs(interesting_dir, exist_ok=True)
 os.makedirs(remarkable_dir, exist_ok=True)
@@ -44,8 +45,8 @@ else :
 
 print(params['mu'].shape)   
 # Initialize the automaton
-# auto = BatchLeniaMC((1,H,W), dt, params=params, num_channels=num_channels, device=device)
-auto = DiscreteLenia((1,H,W), discretization=13, params=None ,device=device)
+auto = BatchLeniaMC((1,H,W), dt, params=params, num_channels=num_channels, device=device)
+# auto = DiscreteLenia((1,H,W), discretization=13, params=None ,device=device)
 auto.to(device)
 # auto.update_params(params)
 # kern = compute_ker(auto, device)
@@ -99,17 +100,20 @@ while running:
                 auto.update_params(params)
                 # kern = compute_ker(auto, device) 
             if(event.key == pygame.K_i):
+                # Intialize with fractal perlin
                 auto.set_init_fractal()
                 n_steps=0
             if(event.key == pygame.K_j):
+                # Initialize with perlin
                 auto.set_init_perlin(wavelength=40)
                 n_steps=0
             if(event.key == pygame.K_k):
+                # Initialize with random wavelength perlin
                 sq_size = random.randint(5,min(W,H))
                 auto.set_init_perlin(square_size=sq_size)
             if(event.key == pygame.K_m):
-                n_steps=0
                 # Load random interesting param
+                n_steps=0
                 file = interest_files[chosen_interesting]
                 chosen_interesting = (chosen_interesting+1)%len(interest_files)
 
@@ -119,22 +123,26 @@ while running:
                 auto.update_params(params)
                 # kern = compute_ker(auto, device) 
             if(event.key == pygame.K_s):
-                # Save the current parameters :
+                # Save the current parameters to remarkable dir :
                 para = auto.get_params()
                 name = f'mu{para["mu"][0][0][0].item():.2f}_sigma{para["sigma"][0][0][0].item():.2f}_{para["beta"][0,0,0,0].item():.2f}'
                 f = open(os.path.join(remarkable_dir,'int'+name+'.pk'), "wb") 
                 pk.dump(para,f)
                 f.close() 
             if(event.key == pygame.K_p):
+                # Toggle pause
                 updating=not updating
             if(event.key == pygame.K_k):
+                # Toggle display kernel
                 display_kernel = not display_kernel
             if(event.key == pygame.K_r):
+                # toggle recording
                 recording = not recording
                 if(not launch_video):
                     video_out.release()
                     launch_video = True 
             if(event.key == pygame.K_DELETE):
+                # sets state to 0
                 auto.state = torch.zeros_like(auto.state)
 
         # Handle the event loop for the camera
@@ -150,6 +158,7 @@ while running:
     
     #Retrieve the world_state from automaton
     world_state = auto.worldmap
+    # Display kernel not updated for now
     # if display_kernel == True:
     #     world_state[:auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[0].cpu()
     #     world_state[auto.k_size:2*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[1].cpu()  
@@ -197,4 +206,5 @@ while running:
 
 if(not launch_video):
     video_out.release()
+
 pygame.quit()
