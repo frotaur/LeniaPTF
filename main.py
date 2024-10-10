@@ -13,7 +13,7 @@ from modules.utils.b_finder_utils import param_batch_to_list
 import numpy as np, os, random
 from torchenhanced.util import showTens
 #============================== PARAMETERS ==========================================================
-device = 'cpu' # Device on which to run the automaton
+device = 'cuda' # Device on which to run the automaton
 W,H = 300,300 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
@@ -43,7 +43,6 @@ else :
     params = param_gen(device)
     print('FUGG')
 
-print(params['mu'].shape)   
 # Initialize the automaton
 auto = BatchLeniaMC((1,H,W), dt, params=params, num_channels=num_channels, device=device)
 # auto = DiscreteLenia((1,H,W), discretization=13, params=None ,device=device)
@@ -126,9 +125,7 @@ while running:
                 # Save the current parameters to remarkable dir :
                 para = auto.get_params()
                 name = f'mu{para["mu"][0][0][0].item():.2f}_sigma{para["sigma"][0][0][0].item():.2f}_{para["beta"][0,0,0,0].item():.2f}'
-                f = open(os.path.join(remarkable_dir,'int'+name+'.pk'), "wb") 
-                pk.dump(para,f)
-                f.close() 
+                torch.save(para,os.path.join(remarkable_dir,'int'+name+'.pt'))
             if(event.key == pygame.K_p):
                 # Toggle pause
                 updating=not updating

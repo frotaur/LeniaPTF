@@ -86,7 +86,8 @@ def around_params(params,device):
 
 def load_params(file, make_batch=False,device='cpu'):
     """
-        Loads and return the parameters given a file (pickle for now) containing them.
+        Loads and return the parameters given a file containing them.
+        Silently 'fixes' if the file is unbatched, adds size 1 batch.
 
         Args:
             file : path to the file containing the parameters
@@ -115,7 +116,9 @@ def load_params(file, make_batch=False,device='cpu'):
             else:
                 params[key] = dico[key][None,...].to(device)
 
-        return params
+    torch.save(params, file) # overwrite with repaired params
+    
+    return params
         
 def compute_ker(auto, device):
     """

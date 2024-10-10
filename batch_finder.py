@@ -16,8 +16,8 @@ folder_save = './data/paper_search'
 device = 'cuda:0'
 H,W = 200,200 # Size of the automaton
 dt = 0.1 # Time step size
-N_steps = 500 # Number of steps to run the automaton for
-num_channels = 1 # Number of channels in the automaton (mainly 3 or 1)
+N_steps = 300 # Number of steps to run the automaton for
+num_channels = 3 # Number of channels in the automaton (mainly 3 or 1)
 
 num_points = 36 # Number of points to find
 refinement = 8 # Number of steps to run the dichotomy search for
@@ -71,22 +71,6 @@ def param_generator(batch_size, num_channels = 3,device='cpu'):
             'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.8*torch.diag(torch.ones(num_channels,device=device)))
             # 'weights' : torch.rand(batch_size,3,3,device=device)
         }
-    
-    return params
-
-
-def discri_param_gen(batch_size, device='cpu'):
-    mu = 0.5*torch.rand((batch_size,1), device=device)
-    sigma = 0.05*torch.rand_like(mu)+1e-5
-            
-
-    params = {
-        'k_size' : 27, 
-        'mu':  mu ,
-        'sigma' : sigma,
-        'mu_k' : torch.full((batch_size,), fill_value=0.5, device=device),
-        'sigma_k' : torch.full((batch_size,),fill_value=0.15, device=device),
-    }
     
     return params
 
