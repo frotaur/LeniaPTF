@@ -70,7 +70,7 @@ if __name__=='__main__':
     os.makedirs(individual_folder_save, exist_ok=True)
     batch_size = batch_size
 
-    f_utils.save_discri_rand('data/latest_rand',batch_size=batch_size,num=num_points//batch_size,param_generator=param_generator,device=device)
+    f_utils.save_discri_rand('data/latest_rand',batch_size=batch_size,num=max(1,20//batch_size),param_generator=param_generator,device=device)
 
     crit_point_list = []
     with torch.no_grad():

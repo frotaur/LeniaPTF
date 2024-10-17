@@ -14,12 +14,12 @@ import math, pickle as pk, shutil
 folder_save = './data/paper_search'
 
 device = 'cuda:0'
-H,W = 200,200 # Size of the automaton
+H,W = 150,150 # Size of the automaton
 dt = 0.1 # Time step size
-N_steps = 300 # Number of steps to run the automaton for
+N_steps = 500 # Number of steps to run the automaton for
 num_channels = 3 # Number of channels in the automaton (mainly 3 or 1)
 
-num_points = 36 # Number of points to find
+num_points = 120 # Number of points to find
 refinement = 8 # Number of steps to run the dichotomy search for
 cross=False # If True, will compute the transition point between all pairs of parameters. Useful for huge generations, but lessens variations
 use_mean = True # If True, uses the mean of the activations to determine death. If False, uses the max.
@@ -29,7 +29,7 @@ threshold_e = 0.05
 # threshold below which we say we have found a dead config in the dichotomy search (generally matches threshold_e)
 threshold_i = 0.05
 
-batch_size = 10 # Number of worlds to simulate in parallel. Reduce if you run out of memory
+batch_size = 20 # Number of worlds to simulate in parallel. Reduce if you run out of memory
 
 # Uncomment to use the equivalent of a 'TEMP' directory. IS EMPTIED EACH TIME THE SCRIPT IS RUN
 folder_save= 'data/latest'
@@ -94,7 +94,7 @@ if __name__=='__main__':
     os.makedirs(individual_folder_save, exist_ok=True)
     batch_size = batch_size
 
-    f_utils.save_rand('data/latest_rand',batch_size=batch_size,num=num_points//batch_size,num_channels=num_channels,param_generator=param_generator,device=device)
+    f_utils.save_rand('data/latest_rand',batch_size=batch_size,num=max(1,20//batch_size),num_channels=num_channels,param_generator=param_generator,device=device)
 
     with torch.no_grad():
         t00 = time()

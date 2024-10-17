@@ -23,8 +23,8 @@ def save_batch_video(batch_param_location,name,save_name,bunching=15, columns=5,
             name : name of the video
             bunching : number of frames to compute at once (default 100)
     """
-    simulation_time = 600
-    size = 200,200
+    simulation_time = 1200
+    size = 300,300
     fps=120
     save_fold = os.path.join('data/videos',save_name)
     os.makedirs(save_fold,exist_ok=True)

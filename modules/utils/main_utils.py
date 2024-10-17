@@ -117,7 +117,8 @@ def load_params(file, make_batch=False,device='cpu'):
                 params[key] = dico[key][None,...].to(device)
 
     torch.save(params, file) # overwrite with repaired params
-    
+
+    print(f'LOADED : {file}')
     return params
         
 def compute_ker(auto, device):

@@ -116,7 +116,6 @@ while running:
                 file = interest_files[chosen_interesting]
                 chosen_interesting = (chosen_interesting+1)%len(interest_files)
 
-                print('loaded ', os.path.join(interesting_dir,file))
                 params = load_params(os.path.join(interesting_dir,file),make_batch=True,device=device)
 
                 auto.update_params(params)
