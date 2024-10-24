@@ -11,7 +11,7 @@ import torch
 from modules.utils.main_utils import load_params
 
 # param_dir = 'data/latest_rand/individual' # Directory containing the individual (unbatched) parameters
-out_dir = 'latest_videos' # Directory to save the videos
+out_dir = 'testing_videos' # Directory to save the videos
 param_dir = 'data/latest/individual'
 
 simulation_time = 1400 # Number of frames to simulate

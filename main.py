@@ -6,19 +6,20 @@ import pygame
 from modules.Camera import Camera
 from modules.Automaton import BatchLeniaMC, DiscreteLenia
 from modules.utils.main_utils import compute_ker, load_params, around_params
+from modules.utils.hash_params import params_to_words
 import cv2
 import pickle as pk
-from batch_finder import param_generator
-from modules.utils.b_finder_utils import param_batch_to_list
+from finder_script import param_generator
 import numpy as np, os, random
-from torchenhanced.util import showTens
 #============================== PARAMETERS ==========================================================
 device = 'cuda' # Device on which to run the automaton
 W,H = 300,300 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
 
-interesting_dir = os.path.join('demo_params') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('data','latest') # Directory containing the parameters to load when pressing 'm'
+# interesting_dir = os.path.join('data','latest_rand') # Directory containing the parameters to load when pressing 'm'
+
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
 #===========================DO NOT MODIFY BELOW THIS LINE===========================================
 
@@ -27,9 +28,7 @@ param_gen = lambda dev: param_generator(1,num_channels=num_channels,device=dev)
 
 videos_dir = os.path.join('data','videos')
 
-interesting_dir = os.path.join(interesting_dir,'individual')
 
-remarkable_dir = os.path.join(remarkable_dir,'individual')
 os.makedirs(interesting_dir, exist_ok=True)
 os.makedirs(remarkable_dir, exist_ok=True)
 os.makedirs(videos_dir, exist_ok=True)
@@ -123,8 +122,8 @@ while running:
             if(event.key == pygame.K_s):
                 # Save the current parameters to remarkable dir :
                 para = auto.get_params()
-                name = f'mu{para["mu"][0][0][0].item():.2f}_sigma{para["sigma"][0][0][0].item():.2f}_{para["beta"][0,0,0,0].item():.2f}'
-                torch.save(para,os.path.join(remarkable_dir,'int'+name+'.pt'))
+                name = params_to_words(para)
+                torch.save(para,os.path.join(remarkable_dir,'nice_'+name+'.pt'))
             if(event.key == pygame.K_p):
                 # Toggle pause
                 updating=not updating

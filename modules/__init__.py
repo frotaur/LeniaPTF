@@ -1,2 +1,2 @@
-from .Automaton import LeniaMC,BatchLeniaMC
+from .Automaton import BatchLeniaMC
 from .Camera import Camera

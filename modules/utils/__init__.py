@@ -1,3 +1,3 @@
 from .main_utils import *
 from .noise_gen import *
-from .finder_utils import phase_finder, interest_finder, hash_dict
+from .hash_params import params_to_words, restore_params_to_names

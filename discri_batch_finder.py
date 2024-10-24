@@ -4,7 +4,7 @@
     To use, choose the parameters on top, and potentially modify param_generator, then run the script.
 """
 import torch,os, numpy as np
-import modules.utils.b_finder_utils as f_utils
+import modules.utils.finder_utils as f_utils
 import math, pickle as pk, shutil
 
 
