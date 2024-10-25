@@ -197,7 +197,7 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, n
 def search_transition(save_folder:str, param_generator:callable, num_points, N_steps:int=400, thresholds:tuple[float]=(0.01,0.01),
                        world_size=(100,100), dt=0.1, batch_size=20, refinement=8, num_channels=3,
                        save_random=False, use_means = (True,True), save_batch_params=False,
-                        cross=False, device='cpu'):
+                        cross=False, device='cpu', **kwargs):
     """
         Runs a search given the parameters. Saves parameters both in save_folder
         and 'data/latest' folder, overwritten each time.
@@ -344,7 +344,7 @@ def expand_batch(param,tar_batch):
     
     return new_param
 
-def save_param(folder,params, batch_folder=None):
+def save_param(folder,params, batch_folder=None, annotation=None):
     """
         Saves parameter both in batch and individually.
 
@@ -352,6 +352,7 @@ def save_param(folder,params, batch_folder=None):
         folder : path to folder where to save params individually
         params : dictionary of parameters
         batch_folder : if provided, will save also the batched parameters
+        annotation : list of same length as batch_size, an annotation of the parameters
     """
     name = params_to_words(params)
     batch_size = params['mu'].shape[0]
@@ -360,8 +361,14 @@ def save_param(folder,params, batch_folder=None):
         torch.save(params,os.path.join(batch_folder,name+'.pt')) 
 
     mid_params_list = param_batch_to_list(params) # Unbatched list of dicts
+    if(annotation is None):
+        annotation = [f'{j:02d}' for j in range(len(mid_params_list))]
+    else:
+        assert len(annotation)==len(mid_params_list), f'Annotation (len={len(annotation)}) must \
+        have same length as batch_size (len={len(mid_params_list)})'
+
     for j in range(len(mid_params_list)):
-        torch.save(mid_params_list[j],os.path.join(folder,name+f'{j:02d}'+'.pt'))
+        torch.save(mid_params_list[j],os.path.join(folder,name+f'_{annotation[j]}'+'.pt'))
 
 def save_rand(folder,batch_size,num,num_channels,param_generator, batch_folder=None, device='cpu'):
     """

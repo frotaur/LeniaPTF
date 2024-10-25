@@ -4,6 +4,7 @@ from typing import Any, Optional, Tuple, Union
 import torch, torch.utils.checkpoint, torch.nn.functional as F
 from torch import nn
 
+import os
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPooling
 from transformers.utils import ModelOutput
@@ -531,8 +532,11 @@ def clipvip16(weights_path=None):
 
     model = CLIPVisionTransformer(base_config, extra_config)
 
-    if(weights_path):
-        model.load_state_dict(torch.load(weights_path),strict=True)
+    if(weights_path is not None):
+        if(os.path.exists(weights_path)):
+            model.load_state_dict(torch.load(weights_path),strict=True)
+        else:
+            print(f'WARNING : No weights found at {weights_path}, using random initialization')
 
     return model
 
@@ -570,7 +574,10 @@ def clipvip32(weights_path=None):
 
     model = CLIPVisionTransformer(base_config, extra_config)
 
-    if(weights_path):
-        model.load_state_dict(torch.load(weights_path),strict=True)
+    if(weights_path is not None):
+        if(os.path.exists(weights_path)):
+            model.load_state_dict(torch.load(weights_path),strict=True)
+        else:
+            print(f'WARNING : No weights found at {weights_path}, using random initialization')
 
     return model

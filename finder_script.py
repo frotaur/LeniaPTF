@@ -31,8 +31,6 @@ threshold_i = 0.001
 
 batch_size = 20 # Number of worlds to simulate in parallel. Reduce if you run out of memory
 
-# Uncomment to use the equivalent of a 'TEMP' directory. IS EMPTIED EACH TIME THE SCRIPT IS RUN
-# folder_save= 'data/latest'
 batch_folder_save = None # If not None, saves also the batch parameters (generally useless)
 
 def param_generator(batch_size, num_channels = 3,device='cpu'):
@@ -78,57 +76,12 @@ def param_generator(batch_size, num_channels = 3,device='cpu'):
 #=========================== DO NOT MODIFY BELOW THIS LINE ===========================================
 if __name__=='__main__':
     from time import time
-    # import math
-
-    # if(os.path.exists('data/latest_rand')):
-    #     shutil.rmtree('data/latest_rand')
-    #     os.makedirs('data/latest_rand',exist_ok=True)
 
 
-    # if(os.path.exists('data/latest')):
-    #     shutil.rmtree('data/latest')
-    
-    # if(batch_folder_save is not None):
-    #     os.makedirs(batch_folder_save, exist_ok=True)
+    t00 = time()
+    search_transition(save_folder=folder_save,param_generator=param_generator,num_points=num_points,
+                        world_size=(H,W), dt=dt, N_steps=N_steps,batch_size=batch_size,
+                        thresholds=(threshold_e,threshold_i), refinement=refinement,
+                        num_channels=num_channels, device=device)
 
-    # os.makedirs(folder_save, exist_ok=True)
-    # batch_size = batch_size
-
-    # f_utils.save_rand('data/latest_rand',batch_size=batch_size,num=max(1,20//batch_size),num_channels=num_channels,param_generator=param_generator,device=device)
-
-    with torch.no_grad():
-        t00 = time()
-        search_transition(save_folder=folder_save,param_generator=param_generator,num_points=num_points,
-                          world_size=(H,W), dt=dt, N_steps=N_steps,batch_size=batch_size,
-                           thresholds=(threshold_e,threshold_i), refinement=refinement,
-                           num_channels=num_channels, device=device)
-        # # optimal if sqrt(num_points)>batch_size
-        # if(cross):
-        #     num_each = math.ceil(math.sqrt(num_points))
-        # else:
-        #     num_each = num_points
-
-        # for _ in range(math.ceil(num_each/batch_size)):
-        #     print(f'Searching for {batch_size} of each phase...')
-        #     # find two batches of parameters (one dead one alive)
-        #     params_d, params_a = \
-        #         f_utils.batch_phase_finder((H,W), dt, N_steps, batch_size=batch_size,params_generator=param_generator, 
-        #                                     threshold=threshold_e, num_channels=num_channels,num_examples=min(batch_size,num_each),
-        #                                     use_mean=False, device=device) 
-            
-        #     if(cross):
-        #         # Compute transition point between all pairs of parameters
-        #         params_d_list = f_utils.param_batch_to_list(params_d,1,squeeze=False)
-        #         for param_d in params_d_list:
-        #             param_d = f_utils.expand_batch(param_d,params_a['mu'].shape[0])
-        #             # Param_d has batch_size = 1, but will broadcast seamlessly when summing with params_a
-        #             t_crit, mid_params = f_utils.interest_finder((H,W), dt, N_steps, param_d, params_a, 
-        #                                                         refinement, threshold_i, device ,num_channels=num_channels,) 
-        #             f_utils.save_param(folder_save, mid_params, batch_folder=batch_folder_save)
-        #     else:
-        #         t_crit, mid_params = f_utils.interest_finder((H,W), dt, N_steps, params_d, params_a, 
-        #                                                         refinement, threshold_i,use_mean=True,device=device,num_channels=num_channels,)
-
-        #         f_utils.save_param(folder_save, mid_params, batch_folder=batch_folder_save)
-
-        print(f'Total time for {num_points} : {time()-t00}')
+    print(f'Total time for {num_points} : {time()-t00}')

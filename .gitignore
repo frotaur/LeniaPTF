@@ -3,3 +3,4 @@ __pycache__
 no_conf
 delete
 .DS_Store
+reward_checkpoints

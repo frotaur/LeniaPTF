@@ -4,7 +4,7 @@
 import torch
 import pygame
 from modules.Camera import Camera
-from modules.Automaton import BatchLeniaMC, DiscreteLenia
+from modules.Automaton import BatchLeniaMC
 from modules.utils.main_utils import compute_ker, load_params, around_params
 from modules.utils.hash_params import params_to_words
 import cv2
@@ -17,7 +17,7 @@ W,H = 300,300 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
 
-interesting_dir = os.path.join('data','latest') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('YAAY') # Directory containing the parameters to load when pressing 'm'
 # interesting_dir = os.path.join('data','latest_rand') # Directory containing the parameters to load when pressing 'm'
 
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
