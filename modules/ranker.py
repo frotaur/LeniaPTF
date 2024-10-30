@@ -1,10 +1,11 @@
 from .utils.finder_utils import search_transition, save_param
+from .utils.hash_params import params_to_words
 from .reward_training import VideoRewardTrainer
 from .Automaton import BatchLeniaMC
 import torch, os, shutil
 import json
 from tqdm import tqdm
-
+from torchenhanced.util import saveTensVideo
 
 class Ranker():
     """
@@ -30,6 +31,8 @@ class Ranker():
         tar_frames = self.reward_model.input_shape[0]
 
         self.allowed_frames = set([i.item() for i in torch.linspace(0,self.evolve_steps,tar_frames).long()])
+
+    @torch.no_grad()
     def generate_interesting_params(self, output_folder, score_cutoff, param_generator, 
                                     search_params=None,use_ptf=True, save_bad=False):
         """
@@ -44,7 +47,7 @@ class Ranker():
             use_ptf : bool, whether to use PTF or not
             save_bad : bool, whether to save the parameters that did not pass the cutoff
         """
-        
+        self.reward_model.eval()
         if(os.path.exists(output_folder)):
             print('Warning, output folder already exists, will add new data to it')
         
@@ -69,7 +72,7 @@ class Ranker():
         print('Generating ranking candidates...')
         # Generates the candidates :
         if(use_ptf):
-            search_transition(save_folder=garbage_folder,save_batch_params=True,**search_params)
+            search_transition(save_folder=garbage_folder,save_batch_params=True,param_generator=param_generator,**search_params)
         else:
             num_points = search_params['num_points']
             for i in range(num_points//batch_size):
@@ -93,12 +96,14 @@ class Ranker():
         
         for _,file in tqdm(enumerate(batch_param_files),total=len(batch_param_files)):
             batch_params = torch.load(file)
-            tensors = self._params_to_tensor(params,simulator) # (B,T,C,H,W) ready for reward model
+            tensors = self._params_to_tensor(batch_params,simulator) # (B,T,C,H,W) ready for reward model
             scores = self.reward_model(tensors) # (B,)
             passed = (scores>score_cutoff) # (B,) mask
             out_params = self._filter_params(batch_params, passed)
+
             scores = [ f'{scor.item():.2f}' for scor in scores[passed]]
-            save_param(folder=output_folder, params=out_params, annotation=scores)
+            if(len(out_params)>0):
+                save_param(folder=output_folder, params=out_params, annotation=scores)
 
             if(save_bad):
                 out_params = self._filter_params(batch_params, ~passed)

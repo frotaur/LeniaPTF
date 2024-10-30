@@ -11,17 +11,17 @@ import torch
 from modules.utils.main_utils import load_params
 
 # param_dir = 'data/latest_rand/individual' # Directory containing the individual (unbatched) parameters
-out_dir = 'testing_videos' # Directory to save the videos
-param_dir = 'data/latest/individual'
+out_dir = 'test_rank_vids' # Directory to save the videos
+param_dir = 'YAAY'
 
-simulation_time = 1400 # Number of frames to simulate
-size = 350,350 # Size of the simulation
+simulation_time = 800 # Number of frames to simulate
+size = 150,150 # Size of the simulation
 fps=120 # Framerate of the video
 device='cuda:0' # Device on which to simulate
 
 
 #### DO NOT MODIFY BELOW THIS LINE ####
-out_dir = os.path.join('data/videos',out_dir)
+# out_dir = os.path.join('data/videos',out_dir)
 os.makedirs(out_dir,exist_ok=True)
 
 params = os.listdir(param_dir)

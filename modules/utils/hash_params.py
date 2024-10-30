@@ -79,8 +79,12 @@ def params_to_words(state_dict: Dict[str, torch.Tensor], num_words: int = 2) -> 
     # Convert state dict to bytes for hashing
     param_bytes = b''
     for key in sorted(state_dict.keys()):  # Sort keys for deterministic ordering
+        if key == "k_size":
+            tohash = torch.tensor(state_dict[key])
+        else:
+            tohash = state_dict[key]
         # use torch.tensor as a hack, to convert the 'int' of k_size to bytes
-        param_bytes += torch.tensor(state_dict[key]).cpu().numpy().tobytes() 
+        param_bytes += tohash.cpu().numpy().tobytes() 
     
     # Create deterministic seed from parameters
     hash_value = int(hashlib.sha256(param_bytes).hexdigest(), 16)

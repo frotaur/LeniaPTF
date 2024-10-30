@@ -196,7 +196,7 @@ while running:
     # Update the screen
     pygame.display.flip()
 
-    clock.tick(120)  # limits FPS to 120
+    clock.tick(60)  # limits FPS to 120
 
 
 if(not launch_video):
