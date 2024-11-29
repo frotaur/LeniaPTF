@@ -123,18 +123,14 @@ def compute_ker(auto, device):
     """
         Prepares the kernel and translate it to an RGB image for viewing.
     """
-    kern= auto.compute_kernel() # (1,C,C, k_size, k_size)
+    kern= auto.compute_kernel()[0] # (C,C, k_size, k_size)
     if(kern.shape[1]==1):
-        kern = kern.expand(-1,3,3,-1,-1)
-        return kern[0,:,0,:,:].expand(3,-1,-1)
-    elif(kern.shape[1]==2):
-        kern = torch.cat((kern,torch.zeros_like(kern[:,1:])),dim=1) # (1,3,2,k_size,k_size)
-        kern = torch.cat((kern,torch.zeros_like(kern[:,:,:1])),dim=2) # (1,3,3,k_size,k_size)
+        kern = kern.expand(3,3,-1,-1)
     elif(kern.shape[1]>3):
-        kern = kern[:,:3,:3]
-    kern = (kern.squeeze(0)).permute((0,3,2,1)) # (C,k_size,k_size,C)
+        kern = kern[:3,:3]
+    kern = kern.permute((0,3,2,1)) # (C,k_size,k_size,C)
     maxs = torch.tensor((torch.max(kern[0]), torch.max(kern[1]), torch.max(kern[2])), device=device)
     # print(maxs)
     maxs = maxs[:,None,None,None]
     kern /= maxs 
-    return kern
+    return kern # (C,k_size,k_size,C)

@@ -2,7 +2,7 @@
 	"save_folder": "./data/soliton_search",
 	"device": "cuda:0",
 	"ptf_world_size" : [100,100],
-    "rank_world_size" : [150,150],
+    "rank_world_size" : [350,350],
 	"dt": 0.1,
 	"N_steps": 500,
 	"num_channels": 3,

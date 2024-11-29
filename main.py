@@ -13,11 +13,11 @@ from finder_script import param_generator
 import numpy as np, os, random
 #============================== PARAMETERS ==========================================================
 device = 'cuda' # Device on which to run the automaton
-W,H = 300,300 # Size of the automaton
+W,H = 500,500 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
 
-interesting_dir = os.path.join('YAAY') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('test_2_ptf') # Directory containing the parameters to load when pressing 'm'
 # interesting_dir = os.path.join('data','latest_rand') # Directory containing the parameters to load when pressing 'm'
 
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
@@ -78,6 +78,8 @@ launch_video = True
 
 counter = 0 # counter to get only the frames we want
 
+kern = compute_ker(auto, device)
+k_size_override = 51
 while running:
     # poll for events
     # pygame.QUIT event means the user clicked X to close your window
@@ -90,25 +92,25 @@ while running:
                 """ New random parameters"""
                 # params = param_gen(device)
                 params = auto.gen_batch_params(auto.device)
-                auto.update_params(params)
-                # kern = compute_ker(auto, device) 
+                auto.update_params(params,k_size_override=k_size_override)
+                kern = compute_ker(auto, device) 
             if(event.key == pygame.K_u):
                 """ Variate around parameters"""
                 params = around_params(params, device)
-                auto.update_params(params)
-                # kern = compute_ker(auto, device) 
+                auto.update_params(params,k_size_override=k_size_override)
+                kern = compute_ker(auto, device) 
             if(event.key == pygame.K_i):
                 # Intialize with fractal perlin
                 auto.set_init_fractal()
                 n_steps=0
             if(event.key == pygame.K_j):
                 # Initialize with perlin
-                auto.set_init_perlin(wavelength=40)
+                auto.set_init_perlin()
                 n_steps=0
             if(event.key == pygame.K_k):
                 # Initialize with random wavelength perlin
                 sq_size = random.randint(5,min(W,H))
-                auto.set_init_perlin(square_size=sq_size)
+                auto.set_init_perlin(wavelength=sq_size)
             if(event.key == pygame.K_m):
                 # Load random interesting param
                 n_steps=0
@@ -117,8 +119,8 @@ while running:
 
                 params = load_params(os.path.join(interesting_dir,file),make_batch=True,device=device)
 
-                auto.update_params(params)
-                # kern = compute_ker(auto, device) 
+                auto.update_params(params,k_size_override=k_size_override)
+                kern = compute_ker(auto, device) 
             if(event.key == pygame.K_s):
                 # Save the current parameters to remarkable dir :
                 para = auto.get_params()
@@ -127,7 +129,7 @@ while running:
             if(event.key == pygame.K_p):
                 # Toggle pause
                 updating=not updating
-            if(event.key == pygame.K_k):
+            if(event.key == pygame.K_q):
                 # Toggle display kernel
                 display_kernel = not display_kernel
             if(event.key == pygame.K_r):
@@ -154,10 +156,10 @@ while running:
     #Retrieve the world_state from automaton
     world_state = auto.worldmap
     # Display kernel not updated for now
-    # if display_kernel == True:
-    #     world_state[:auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[0].cpu()
-    #     world_state[auto.k_size:2*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[1].cpu()  
-    #     world_state[2*auto.k_size:3*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[2].cpu()  
+    if display_kernel == True:
+        world_state[:auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[0].cpu()
+        world_state[auto.k_size:2*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[1].cpu()  
+        world_state[2*auto.k_size:3*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[2].cpu()  
 
     #Make the viewable surface.
     surface = pygame.surfarray.make_surface(world_state)
@@ -196,7 +198,7 @@ while running:
     # Update the screen
     pygame.display.flip()
 
-    clock.tick(60)  # limits FPS to 120
+    clock.tick(240)  # limits FPS to 120
 
 
 if(not launch_video):

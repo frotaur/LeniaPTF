@@ -63,7 +63,7 @@ class BatchLeniaMC(DevModule):
         self.kernel = self.compute_kernel() # (B,C,C,h, w)
 
 
-    def update_params(self, params):
+    def update_params(self, params, k_size_override = None):
         """
             Updates some or all parameters of the automaton. 
             Changes batch size to match the one of provided params (take mu as reference)
@@ -75,6 +75,8 @@ class BatchLeniaMC(DevModule):
         self.sigma_k = params.get('sigma_k',self.sigma_k)
         self.weights = params.get('weights',self.weights)
         self.k_size = params.get('k_size',self.k_size) # kernel sizes (same for all)
+        if(k_size_override is not None):
+            self.k_size = k_size_override
 
         self.norm_weights()
 

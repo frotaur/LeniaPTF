@@ -5,7 +5,8 @@ from .Automaton import BatchLeniaMC
 import torch, os, shutil
 import json
 from tqdm import tqdm
-from torchenhanced.util import saveTensVideo
+from showtens import show_image, save_video
+
 
 class Ranker():
     """
@@ -57,11 +58,8 @@ class Ranker():
 
         with open(search_params,'r') as f:
             search_params = json.load(f)
-        del search_params['save_folder']
-        del search_params['save_batch_params']
 
         batch_size = search_params['batch_size']
-        rank_batch_size = search_params.get('rank_batch_size',batch_size)
         
         garbage_folder = os.path.join(tempfolder,'params')
         params_folder = os.path.join(tempfolder,'params_batch')
@@ -82,10 +80,7 @@ class Ranker():
                 save_param(folder=garbage_folder,params=params, batch_folder=params_folder)
         
         print('Ranking candidates...')
-        B,H,W = (rank_batch_size, *search_params['rank_world_size'])
-        # Generates the video tensors :
-        simulator = BatchLeniaMC(size = (B,H,W) , num_channels=search_params['num_channels'],
-                                 device=search_params['device'], dt=search_params['dt'])
+        simulator = self.get_simulator(search_params)
 
         batch_param_files = [os.path.join(params_folder,file) for file in os.listdir(params_folder)]
 
@@ -96,8 +91,7 @@ class Ranker():
         
         for _,file in tqdm(enumerate(batch_param_files),total=len(batch_param_files)):
             batch_params = torch.load(file)
-            tensors = self._params_to_tensor(batch_params,simulator) # (B,T,C,H,W) ready for reward model
-            scores = self.reward_model(tensors) # (B,)
+            scores = self.score_params(batch_params, simulator, repetitions=1) # (B,)
             passed = (scores>score_cutoff) # (B,) mask
             out_params = self._filter_params(batch_params, passed)
 
@@ -112,17 +106,46 @@ class Ranker():
 
         # Delete all the temporary files
         shutil.rmtree(tempfolder)
-
         print('Ranking finished, parameters saved in output folder')
+    
+
+    def get_simulator(self, search_params):
+        batch_size = search_params['batch_size']
+        rank_batch_size = search_params.get('rank_batch_size',batch_size)
+        B,H,W = (rank_batch_size, *search_params['rank_world_size'])
+        # Generates the video tensors :
+        simulator = BatchLeniaMC(size = (B,H,W) , num_channels=search_params['num_channels'],
+                                 device=search_params['device'], dt=search_params['dt'])
+        return simulator
+
+    def score_params(self, batch_params, simulator:BatchLeniaMC, repetitions=1):
+        """
+            Scores the batch of parameters, averaging over repetitions.
+
+            Args:
+                batch_params : dict of batched parameters
+                simulator : BatchLeniaMC, simulator
+                repetitions : int, number of repetitions of scoring (done sequentially)
+        """
+        batch_size = batch_params['mu'].shape[0]
+
+        scores = []
+        for _ in range(repetitions):
+            tensors = self._params_to_tensor(batch_params,simulator) # (B,T,C,H,W) ready for reward model
+            scores.append(self.reward_model(tensors)) # (B,)
+        scores = torch.stack(scores,dim=1).mean(dim=1) # (B,)
+
+        return scores
 
     def _params_to_tensor(self, parameters, simulator:BatchLeniaMC):
         """
             Given a Lenia parameter state_dict, returns a (B,T,C,H,W)
-            tensor in the correct format for the reward model.
+            tensor in the correct format for the reward model, by
+            evolving the automaton.
 
             Args:
             parameters : lenia state_dict
-
+            simulator : Automaton class used to evolve the parameters
         """
         simulator.update_params(parameters)
         simulator.set_init_fractal()

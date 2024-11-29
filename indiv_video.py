@@ -3,7 +3,7 @@
 """
 
 
-from torchenhanced.util import saveTensVideo
+from showtens import save_video
 from modules import BatchLeniaMC
 import os
 from tqdm import tqdm
@@ -11,11 +11,11 @@ import torch
 from modules.utils.main_utils import load_params
 
 # param_dir = 'data/latest_rand/individual' # Directory containing the individual (unbatched) parameters
-out_dir = 'test_rank_vids' # Directory to save the videos
-param_dir = 'YAAY'
+out_dir = 'data/more_videos' # Directory to save the videos
+param_dir = 'demo_params'
 
-simulation_time = 800 # Number of frames to simulate
-size = 150,150 # Size of the simulation
+simulation_time = 1200 # Number of frames to simulate
+size = 350,350 # Size of the simulation
 fps=120 # Framerate of the video
 device='cuda:0' # Device on which to simulate
 
@@ -40,4 +40,4 @@ for i,p in tqdm(enumerate(params_paths),total=len(params_paths)):
         v_tens[:,t] = auto.state
         auto.step()
 
-    saveTensVideo(v_tens[0],out_dir,name=param_names[i],fps=fps,out_size=size[0],columns=1)
+    save_video(v_tens[0],out_dir,name=param_names[i],fps=fps,max_width=size[0],columns=1,padding=0)
