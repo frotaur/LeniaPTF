@@ -1,8 +1,9 @@
 import torch
 from ..Automaton import BatchLeniaMC
-from ..reward_training import VideoRewardTrainer
-from ..utils.finder_utils import search_transition
+from modules import Ranker
 from ..utils import LeniaParams
+import json
+from tqdm import tqdm
 
 class GeneticEvolver:
     """
@@ -10,17 +11,21 @@ class GeneticEvolver:
         For now, it uses the 'ranker' class, as well as the specific automaton.
         In the future, it might be better to create wrapper classes for the scorer, and
         the automaton, we will see if it's necessary.
-    """
+k    """
 
-    def __init__(self, ranker, rank_config, search_config):
+    def __init__(self, ranker:Ranker, rank_config, search_config, save_path='evo_params'):
         """
             Args:
                 ranker : Ranker, the ranker object to use
                 rank_config : dict, configuration for the ranker
         """
-        self.ranker = ranker
-        self.rank_config = rank_config
-        self.search_config = search_config
+        self.ranker = ranker # Maybe change it to save ranker state
+        self.save_path = save_path
+        
+        with open(rank_config, 'r') as f:
+            self.rank_config = json.load(f)
+        with open(search_config, 'r') as f:
+            self.search_config = json.load(f)
 
         self.simulator = self.ranker.get_simulator(self.rank_config)
     
@@ -54,12 +59,12 @@ class GeneticEvolver:
         # Initialize the population
         population: LeniaParams = self._init_population(pop_size, device) # Those are parameters
 
-        for gen in range(generations):
+        for gen in tqdm(range(generations)):
             # Score the population
             scores = self.ranker.score_params(population, self.simulator, repetitions=1) # (pop_size,)
 
             best, best_idx = torch.topk(scores, k=elite_size, largest=True, sorted=True)
-
+            print('\nBest scores : ', best)
             # Keep the elite
             elite = population[best_idx]
 
@@ -70,3 +75,5 @@ class GeneticEvolver:
             offspring = offspring[:pop_size-elite_size]
             # Combine the elite
             population = elite.cat(offspring)
+        
+        population.save_indiv()

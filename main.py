@@ -17,7 +17,7 @@ W,H = 500,500 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
 
-interesting_dir = os.path.join('test_2_ptf') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('evo') # Directory containing the parameters to load when pressing 'm'
 # interesting_dir = os.path.join('data','latest_rand') # Directory containing the parameters to load when pressing 'm'
 
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
@@ -79,7 +79,7 @@ launch_video = True
 counter = 0 # counter to get only the frames we want
 
 kern = compute_ker(auto, device)
-k_size_override = 51
+k_size_override = 31
 while running:
     # poll for events
     # pygame.QUIT event means the user clicked X to close your window

@@ -3,6 +3,7 @@ import numpy as np
 from torchenhanced import DevModule
 from .utils.noise_gen import perlin,perlin_fractal
 from .utils.main_utils import gen_batch_params
+from .utils.leniaparams import LeniaParams
 
 class BatchLeniaMC(DevModule):
     """
@@ -17,7 +18,7 @@ class BatchLeniaMC(DevModule):
                 size : (B,H,W) of ints, size of the automaton and number of batches
                 dt : time-step used when computing the evolution of the automaton
                 num_channels : int, number of channels (C) in the automaton
-                params : dict of tensors containing the parameters. If none, generates randomly
+                params : LeniaParams class, or dict of parameters containing the following
                     keys-values : 
                     'k_size' : odd int, size of kernel used for computations
                     'mu' : (B,C,C) tensor, mean of growth functions
@@ -37,7 +38,7 @@ class BatchLeniaMC(DevModule):
 
         if(params is None):
             # Generates random parameters
-            params = gen_batch_params(self.batch,device,num_channels=self.C)
+            params = LeniaParams(batch_size=self.batch, k_size=25, device=device)
 
         self.k_size = params['k_size'] # kernel sizes (same for all) MUST BE ODD !!!
 
@@ -67,7 +68,12 @@ class BatchLeniaMC(DevModule):
         """
             Updates some or all parameters of the automaton. 
             Changes batch size to match the one of provided params (take mu as reference)
+
+            Args:
+                params : LeniaParams or dict, prefer the former
         """
+        if(isinstance(params,LeniaParams)):
+            params = params.param_dict
         self.mu = params.get('mu',self.mu)
         self.sigma = params.get('sigma',self.sigma)
         self.beta = params.get('beta',self.beta)
@@ -77,6 +83,7 @@ class BatchLeniaMC(DevModule):
         self.k_size = params.get('k_size',self.k_size) # kernel sizes (same for all)
         if(k_size_override is not None):
             self.k_size = k_size_override
+
 
         self.norm_weights()
 

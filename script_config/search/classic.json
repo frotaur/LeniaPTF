@@ -14,5 +14,6 @@
 	"batch_folder_save": null,
     "save_random":false,
     "use_means": [true,true], 
-    "save_batch_params":false
+    "save_batch_params":false,
+    "k_size": 25
 }
