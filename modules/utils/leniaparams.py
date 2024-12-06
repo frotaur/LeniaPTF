@@ -16,6 +16,7 @@ class LeniaParams():
                 device : str, device to use
         """
         self.device = device
+
         if(param_dict is None and from_file is None):
             # Not great, but ok for now
             assert k_size is not None and batch_size is not None, 'k_size and batch_size must be provided if no parameters are given'
@@ -25,22 +26,36 @@ class LeniaParams():
 
         if(from_file is not None):
             param_dict = torch.load(from_file, map_location=device)
+        
 
         assert param_dict.keys() == {'k_size','mu','sigma','beta','mu_k','sigma_k','weights'}, f'Invalid parameter dictionary, got keys : {param_dict.keys()}'
         
         self.k_size = param_dict['k_size']
-        self.mu = param_dict['mu'].to(device)
-        self.sigma = param_dict['sigma'].to(device)
-        self.beta = param_dict['beta'].to(device)
-        self.mu_k = param_dict['mu_k'].to(device)
-        self.sigma_k = param_dict['sigma_k'].to(device)
-        self.weights = param_dict['weights'].to(device)
+        self.mu = param_dict['mu']
+        self.sigma = param_dict['sigma']
+        self.beta = param_dict['beta']
+        self.mu_k = param_dict['mu_k']
+        self.sigma_k = param_dict['sigma_k']
+        self.weights = param_dict['weights']
 
         self.batch_size = self.mu.shape[0]
 
 
         self._sanitize()
-    
+        self.to(device)
+
+    def to(self, device):
+        """
+            Moves the parameters to a device, like pytorch.
+        """
+        self.device = device
+        self.mu = self.mu.to(device)
+        self.sigma = self.sigma.to(device)
+        self.beta = self.beta.to(device)
+        self.mu_k = self.mu_k.to(device)
+        self.sigma_k = self.sigma_k.to(device)
+        self.weights = self.weights.to(device)
+
     @property
     def param_dict(self):
         """
@@ -56,7 +71,7 @@ class LeniaParams():
             'weights' : self.weights
         }
     
-    def save_indiv(self, folder, params, batch_name=False, annotation=None):
+    def save_indiv(self, folder, batch_name=False, annotation=None):
         """
             Saves parameter both in batch and individually.
 
@@ -66,10 +81,12 @@ class LeniaParams():
             batch_name : if True, names indiv parameters with batch name + annotation
             annotation : list of same length as batch_size, an annotation of the parameters
         """
+        os.makedirs(folder, exist_ok=True)
+
         name = params_to_words(self.param_dict)
         batch_size = self.batch_size
 
-        params_list = [params[i:i+1] for i in range(batch_size)] # to keep the batch size
+        params_list = [self[i] for i in range(batch_size)] # to keep the batch size
 
         if(annotation is None):
             annotation = [f'{j:02d}' for j in range(len(params_list))]
@@ -79,17 +96,18 @@ class LeniaParams():
 
         for j in range(len(params_list)):
             if(not batch_name):
-                indiv_name = params_to_words(params_list[j])
-                fullname = indiv_name
+                indiv_name = params_to_words(params_list[j].param_dict)
+                fullname = indiv_name+'.pt'
             else:
                 fullname = name+f'_{annotation[j]}'+'.pt'
             
-            torch.save(params_list[j],os.path.join(fullname))
+            torch.save(params_list[j].param_dict,os.path.join(folder, fullname))
 
     def save(self, path):
         """
             Saves the (batched) parameters to a file.
         """
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(self.param_dict, path)
     
     def load(self, path):
@@ -129,15 +147,17 @@ class LeniaParams():
         """
         if(isinstance(idx, str)):
             return self.param_dict[idx]
-        else:
-            params ={}
-            for k,v in self.param_dict.items():
-                if(k=='k_size'):
-                    params[k] = v
-                else:
-                    params[k] = v[idx]
+        elif(isinstance(idx, int)):
+            idx = slice(idx,idx+1)
         
-            return LeniaParams(params,device=self.device)
+        params ={}
+        for k,v in self.param_dict.items():
+            if(k=='k_size'):
+                params[k] = v
+            else:
+                params[k] = v[idx]
+    
+        return LeniaParams(params,device=self.device)
 
     def __add__(self, other : 'LeniaParams'):
         """

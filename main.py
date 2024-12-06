@@ -5,6 +5,7 @@ import torch
 import pygame
 from modules.Camera import Camera
 from modules.Automaton import BatchLeniaMC
+from modules.utils import LeniaParams
 from modules.utils.main_utils import compute_ker, load_params, around_params
 from modules.utils.hash_params import params_to_words
 import cv2
@@ -17,7 +18,7 @@ W,H = 500,500 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
 
-interesting_dir = os.path.join('evo') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('demo_params') # Directory containing the parameters to load when pressing 'm'
 # interesting_dir = os.path.join('data','latest_rand') # Directory containing the parameters to load when pressing 'm'
 
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
@@ -37,13 +38,14 @@ interest_files = os.listdir(interesting_dir)
 
 if len(interest_files) > 0:
     file = random.choice(interest_files)
-    params = load_params(os.path.join(interesting_dir,file), make_batch=True, device=device)
+    params = LeniaParams(from_file=os.path.join(interesting_dir,file), device=device)
+    # params = load_params(os.path.join(interesting_dir,file), make_batch=True, device=device)
 else :
     params = param_gen(device)
     print('FUGG')
 
 # Initialize the automaton
-auto = BatchLeniaMC((1,H,W), dt, params=params, num_channels=num_channels, device=device)
+auto = BatchLeniaMC((1,H,W), dt, params=params, num_channels=num_channels, device=device, use_fft=False)
 # auto = DiscreteLenia((1,H,W), discretization=13, params=None ,device=device)
 auto.to(device)
 # auto.update_params(params)
@@ -79,7 +81,7 @@ launch_video = True
 counter = 0 # counter to get only the frames we want
 
 kern = compute_ker(auto, device)
-k_size_override = 31
+k_size_override = 63
 while running:
     # poll for events
     # pygame.QUIT event means the user clicked X to close your window
@@ -117,8 +119,8 @@ while running:
                 file = interest_files[chosen_interesting]
                 chosen_interesting = (chosen_interesting+1)%len(interest_files)
 
-                params = load_params(os.path.join(interesting_dir,file),make_batch=True,device=device)
-
+                # params = load_params(os.path.join(interesting_dir,file),make_batch=True,device=device)
+                params = LeniaParams(from_file=os.path.join(interesting_dir,file), device=device)
                 auto.update_params(params,k_size_override=k_size_override)
                 kern = compute_ker(auto, device) 
             if(event.key == pygame.K_s):

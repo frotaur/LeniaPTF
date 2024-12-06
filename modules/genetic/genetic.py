@@ -21,7 +21,7 @@ k    """
         """
         self.ranker = ranker # Maybe change it to save ranker state
         self.save_path = save_path
-        
+
         with open(rank_config, 'r') as f:
             self.rank_config = json.load(f)
         with open(search_config, 'r') as f:
@@ -76,4 +76,4 @@ k    """
             # Combine the elite
             population = elite.cat(offspring)
         
-        population.save_indiv()
+        population.save_indiv(folder=self.save_path)

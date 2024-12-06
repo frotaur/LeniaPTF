@@ -4,13 +4,15 @@ from torchenhanced import DevModule
 from .utils.noise_gen import perlin,perlin_fractal
 from .utils.main_utils import gen_batch_params
 from .utils.leniaparams import LeniaParams
+from showtens import show_image
+
 
 class BatchLeniaMC(DevModule):
     """
         Batched Multi-channel lenia, to run batch_size worlds in parallel !
         Does not support live drawing in pygame, maybe will later.
     """
-    def __init__(self, size, dt, num_channels=3, params=None, state_init = None, device='cpu' ):
+    def __init__(self, size, dt, num_channels=3, params=None, state_init = None, use_fft = False, device='cpu' ):
         """
             Initializes automaton.  
 
@@ -38,10 +40,20 @@ class BatchLeniaMC(DevModule):
 
         if(params is None):
             # Generates random parameters
-            params = LeniaParams(batch_size=self.batch, k_size=25, device=device)
-
-        self.k_size = params['k_size'] # kernel sizes (same for all) MUST BE ODD !!!
-
+            self.params = LeniaParams(batch_size=self.batch, k_size=25, device=device)
+        elif(isinstance(params,dict)):
+            self.params = LeniaParams(param_dict=params, device=device)
+        else:
+            self.params = params
+        
+        self.k_size = self.params['k_size'] # kernel sizes (same for all) ODD for conv2d, even for fft
+        if(use_fft):
+            if(self.h%2==1):
+                self.h += 1
+                print(f'Increased image size to even for fft {self.h}x{self.w}')
+            if(self.w%2==1):
+                self.w += 1
+                print(f'Increased image size to even for fft {self.h}x{self.w}')
         self.register_buffer('state',torch.rand((self.batch,self.C,self.h,self.w)))
 
         if(state_init is None):
@@ -51,18 +63,21 @@ class BatchLeniaMC(DevModule):
 
         self.dt = dt
 
+        self.use_fft = use_fft
+
         # Buffer for all parameters since we do not require_grad for them :
-        self.register_buffer('mu', params['mu']) # mean of the growth functions (B,C,C)
-        self.register_buffer('sigma', params['sigma']) # standard deviation of the growths functions (B,C,C)
-        self.register_buffer('beta',params['beta']) # max of the kernel rings (B,C,C, # of rings)
-        self.register_buffer('mu_k',params['mu_k'])# mean of the kernel gaussians (B,C,C, # of rings)
-        self.register_buffer('sigma_k',params['sigma_k'])# standard deviation of the kernel gaussians (B,C,C, # of rings)
-        self.register_buffer('weights',params['weights']) # raw weigths for the growth weighted sum (B,C,C)
-
-        self.norm_weights()
+        self.register_buffer('mu', self.params['mu']) # mean of the growth functions (B,C,C)
+        self.register_buffer('sigma', self.params['sigma']) # standard deviation of the growths functions (B,C,C)
+        self.register_buffer('beta',self.params['beta']) # max of the kernel rings (B,C,C, # of rings)
+        self.register_buffer('mu_k',self.params['mu_k'])# mean of the kernel gaussians (B,C,C, # of rings)
+        self.register_buffer('sigma_k',self.params['sigma_k'])# standard deviation of the kernel gaussians (B,C,C, # of rings)
+        self.register_buffer('weights',self.params['weights']) # raw weigths for the growth weighted sum (B,C,C)
         self.register_buffer('kernel',torch.zeros((self.k_size,self.k_size)))
-        self.kernel = self.compute_kernel() # (B,C,C,h, w)
 
+        self.update_params(self.params)
+        # self.kernel = self.compute_kernel() # (B,C,C,h, w)
+
+        # self.fft_kernel = torch.fft.fft2(self.kernel) # (B,C,C,h,w)
 
     def update_params(self, params, k_size_override = None):
         """
@@ -74,6 +89,7 @@ class BatchLeniaMC(DevModule):
         """
         if(isinstance(params,LeniaParams)):
             params = params.param_dict
+
         self.mu = params.get('mu',self.mu)
         self.sigma = params.get('sigma',self.sigma)
         self.beta = params.get('beta',self.beta)
@@ -81,14 +97,26 @@ class BatchLeniaMC(DevModule):
         self.sigma_k = params.get('sigma_k',self.sigma_k)
         self.weights = params.get('weights',self.weights)
         self.k_size = params.get('k_size',self.k_size) # kernel sizes (same for all)
+
         if(k_size_override is not None):
             self.k_size = k_size_override
+        if(self.use_fft):
+            if(self.k_size%2==1):
+                self.k_size += 1
+                print(f'Using fft, increased odd kernel size to {self.k_size}')
+        else:
+            if(self.k_size%2==0):
+                self.k_size += 1
+            print(f'Using conv2d, increased even kernel size to {self.k_size}')
 
+        self.params = LeniaParams(param_dict=params, device=self.device)
 
         self.norm_weights()
 
         self.batch = self.mu.shape[0] # update batch size
-        self.kernel = self.compute_kernel() # (B,C,C,h,w)
+        self.kernel = self.compute_kernel() # (B,C,C,k_size,k_size)
+
+        self.fft_kernel = self.kernel_to_fft(self.kernel) # (B,C,C,h,w)
 
     
     def norm_weights(self):
@@ -100,14 +128,11 @@ class BatchLeniaMC(DevModule):
         N = self.weights.sum(dim=1, keepdim = True) # (B,1,C)
         self.weights = torch.where(N > 1.e-6, self.weights/N, 0)
 
-    def get_params(self):
+    def get_params(self) -> LeniaParams:
         """
-            Get the parameter dictionary which defines the automaton
+            Get the LeniaParams which defines the automaton
         """
-        params = dict(k_size = self.k_size,mu = self.mu, sigma = self.sigma, beta = self.beta,
-                       mu_k = self.mu_k, sigma_k = self.sigma_k, weights = self.weights)
-        
-        return params
+        return self.params
 
     def set_init_fractal(self):
         """
@@ -156,8 +181,9 @@ class BatchLeniaMC(DevModule):
         """
             Computes the kernel given the current parameters.
         """
-        xyrange = torch.arange(-1, 1+0.00001, 2/(self.k_size-1)).to(self.device)
-        X,Y = torch.meshgrid(xyrange, xyrange,indexing='ij')
+        xyrange = torch.linspace(-1, 1, self.k_size).to(self.device)
+
+        X,Y = torch.meshgrid(xyrange, xyrange,indexing='xy') # (k_size,k_size),  axis directions is x increasing to the right, y increasing to the bottom
         r = torch.sqrt(X**2+Y**2)
 
         K = self.kernel_slice(r) #(B,C,C,k_size,k_size)
@@ -171,6 +197,21 @@ class BatchLeniaMC(DevModule):
 
         return K #(B,C,C,k_size,k_size)
     
+    def kernel_to_fft(self, K):
+
+        # Pad kernel to match image size
+        K = F.pad(K, [(self.h-self.k_size)//2]*2 + [(self.w-self.k_size)//2]*2) # (B,C,C,h,w)
+        print('Padded kernel')
+        # show_image(K,rescale=True)
+        # Center the kernel on the top left corner for fft
+        K = K.roll((self.h//2,self.w//2),dims=(-1,-2)) # (B,C,C,h,w)
+        print('centered kernel')
+        # show_image(K, rescale=True)
+        K = torch.fft.fft2(K) # (B,C,C,h,w)
+        print('fouried kernel')
+        # show_image(torch.cat([torch.abs(K),torch.angle(K)],dim=0),rescale=True)
+        return K #(B,C,C,h,w)
+
     def growth(self, u): # u:(B,C,C,H,W)
         """
             Computes the growth of the automaton given the concentration u.
@@ -192,14 +233,10 @@ class BatchLeniaMC(DevModule):
         """
             Steps the automaton state by one iteration.
         """
-        # Shenanigans to make all the convolutions at once.
-        kernel_eff = self.kernel.reshape([self.batch*self.C*self.C,1,self.k_size,self.k_size])#(B*C^2,1,k,k)
-
-        U = self.state.reshape(1,self.batch*self.C,self.h,self.w) # (1,B*C,H,W)
-        U = F.pad(U, [(self.k_size-1)//2]*4, mode = 'circular') # (1,B*C,H+pad,W+pad)
-        
-        U = F.conv2d(U, kernel_eff, groups=self.C*self.batch).squeeze(1) #(B*C^2,1,H,W) squeeze to (B*C^2,H,W)
-        U = U.reshape(self.batch,self.C,self.C,self.h,self.w) # (B,C,C,H,W)
+        if(self.use_fft):
+            U = self.get_fftconv(self.state)
+        else:
+            U = self.get_conv(self.state)
 
         assert (self.h,self.w) == (self.state.shape[2], self.state.shape[3])
 
@@ -210,7 +247,33 @@ class BatchLeniaMC(DevModule):
         dx = (self.growth(U)*weights).sum(dim=1) #(B,C,H,W)
 
         # Apply growth and clamp
-        self.state = torch.clamp(self.state + self.dt*dx, 0, 1)     
+        self.state = torch.clamp(self.state + self.dt*dx, 0, 1) # (B,C,H,W)
+
+    def get_conv(self, state):
+        """
+            Compute convolution using conv2d
+        """
+        # Shenanigans to make all the convolutions at once.
+        kernel_eff = self.kernel.reshape([self.batch*self.C*self.C,1,self.k_size,self.k_size])#(B*C^2,1,k,k)
+
+        U = state.reshape(1,self.batch*self.C,self.h,self.w) # (1,B*C,H,W)
+        U = F.pad(U, [(self.k_size-1)//2]*4, mode = 'circular') # (1,B*C,H+pad,W+pad)
+        
+        U = F.conv2d(U, kernel_eff, groups=self.C*self.batch).squeeze(1) #(B*C^2,1,H,W) squeeze to (B*C^2,H,W)
+        U = U.reshape(self.batch,self.C,self.C,self.h,self.w) # (B,C,C,H,W)
+
+        return U
+    
+    def get_fftconv(self, state):
+        """
+            Compute convolution using fft
+        """
+        state = torch.fft.fft2(state) # (B,C,H,W) fourier transform
+        state = state[:,:,None] # (B,1,C,H,W)
+        state = state*self.fft_kernel # (B,C,C,H,W), convoluted
+        state = torch.fft.ifft2(state) # (B,C,C,H,W), back to spatial domain
+
+        return torch.real(state)
 
     def mass(self):
         """
