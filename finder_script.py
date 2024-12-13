@@ -3,11 +3,10 @@
     Script to run a batched search for transition regions, in between dead and alive phases.
     To use, choose the parameters on top, and potentially modify param_generator, then run the script.
 """
-import torch,os, numpy as np
-import modules.utils.finder_utils as f_utils
-import math, shutil
-from time import time
+import torch, math
+import math
 from modules.utils.finder_utils import search_transition
+from modules.utils import LeniaParams
 #============================== PARAMETERS ==========================================================
 
 # Where to save the found parameters
@@ -33,7 +32,7 @@ batch_size = 20 # Number of worlds to simulate in parallel. Reduce if you run ou
 
 batch_folder_save = None # If not None, saves also the batch parameters (generally useless)
 
-def param_generator(batch_size, num_channels = 3,device='cpu'):
+def param_generator(batch_size, num_channels = 3,device='cpu') -> LeniaParams:
     """
         Prior distribution on the parameters we generate. Can be modified to search in a different
         space.
@@ -53,7 +52,7 @@ def param_generator(batch_size, num_channels = 3,device='cpu'):
     # sigma = mu/(3*np.sqrt(2*np.log(2)))*(1+ (torch.ones_like(mu)-2*torch.rand_like(mu)))
     # sigma = (mu)/(np.sqrt(2*math.log(2)))*(1+torch.clamp(torch.randn((batch_size,num_channels,num_channels), device=device),min=-1+1e-3,max=2))
     # sigma = 0.2*torch.rand((batch_size,num_channels,num_channels), device=device)+1e-4
-    sigma = mu/(np.sqrt(2*math.log(2)))*0.8*torch.rand((batch_size,num_channels,num_channels), device=device)+1e-4
+    sigma = mu/(math.sqrt(2*math.log(2)))*0.8*torch.rand((batch_size,num_channels,num_channels), device=device)+1e-4
 
     params = {
             'k_size' : 31, 
@@ -71,7 +70,7 @@ def param_generator(batch_size, num_channels = 3,device='cpu'):
             # 'weights' : torch.rand(batch_size,3,3,device=device)
         }
     
-    return params
+    return LeniaParams(param_dict=params, device=device)
 
 #=========================== DO NOT MODIFY BELOW THIS LINE ===========================================
 if __name__=='__main__':

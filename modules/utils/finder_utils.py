@@ -4,12 +4,11 @@ from time import time
 import copy, os, shutil, math
 from tqdm import tqdm
 from math import ceil
-from .hash_params import params_to_words
-
+from .leniaparams import LeniaParams, BatchParams
 
 @torch.no_grad()
-def batch_phase_finder(size, dt, N_steps, batch_size, params_generator, 
-                       threshold, num_channels=3,num_examples=None, use_mean=True, device='cpu'):
+def phase_finder(size, dt, N_steps, batch_size, params_generator, 
+                       threshold, num_channels=3,num_examples=None, use_mean=True, device='cpu') -> tuple[BatchParams]:
     """
         Finds a set of parameter of dead automaton, and a set of parameters of an alive automaton.
 
@@ -42,8 +41,8 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator,
     if(num_examples is None):
         num_examples = int(batch_size//2)
 
-    dead_params = {}
-    alive_params = {}
+    dead_params = None
+    alive_params = None
     params = params_generator(batch_size,num_channels=num_channels,device=device)
 
     dead_params['k_size'] = params['k_size']
@@ -77,27 +76,42 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator,
         dead_add = min(num_examples-n_dead,num_d) # Number of dead examples to keep to reach num_examples
         alive_add = min(num_examples-n_alive,num_a) # Number of alive examples to keep to reach num_examples
 
+        param_d = params[dead_mask] 
+        param_a = params[~dead_mask] 
 
-        for key,cur_param in params.items():
-            if(key!='k_size'):
-                B = cur_param.shape[0]
-                par_size = cur_param.shape[1:]
+        param_d = param_d[:dead_add]
+        param_a = param_a[:alive_add]
 
-                param_d = cur_param[dead_mask] # (Flattened selection)
-                param_a = cur_param[~dead_mask] # (Flattened selection)
+        if(dead_params is None):
+            dead_params = param_d #  Leniaparams
+        else:
+            dead_params = dead_params.cat(param_d)
+        
+        if(alive_params is None):
+            alive_params = param_a
+        else:
+            alive_params = alive_params.cat(param_a)
 
-                param_d = param_d.reshape(-1,*par_size)[:dead_add] # (num_D,par_size)
-                param_a = param_a.reshape(-1,*par_size)[:alive_add] # (num_A,par_size)
+        # for key,cur_param in params.items():
+        #     if(key!='k_size'):
+        #         B = cur_param.shape[0]
+        #         par_size = cur_param.shape[1:]
 
-                if(key in dead_params):
-                    dead_params[key] = torch.cat((dead_params[key],param_d),dim=0) # (n_dead+num_D,par_size)
-                else:
-                    dead_params[key] = param_d
+        #         param_d = cur_param[dead_mask] # (Flattened selection)
+        #         param_a = cur_param[~dead_mask] # (Flattened selection)
 
-                if(key in alive_params):
-                    alive_params[key] = torch.cat((alive_params[key],param_a),dim=0) # (n_alive+num_A,par_size)
-                else:
-                    alive_params[key] = param_a
+        #         param_d = param_d.reshape(-1,*par_size)[:dead_add] # (num_D,par_size)
+        #         param_a = param_a.reshape(-1,*par_size)[:alive_add] # (num_A,par_size)
+
+        #         if(key in dead_params):
+        #             dead_params[key] = torch.cat((dead_params[key],param_d),dim=0) # (n_dead+num_D,par_size)
+        #         else:
+        #             dead_params[key] = param_d
+
+        #         if(key in alive_params):
+        #             alive_params[key] = torch.cat((alive_params[key],param_a),dim=0) # (n_alive+num_A,par_size)
+        #         else:
+        #             alive_params[key] = param_a
 
         print(f'Adding {dead_add} dead')
         n_dead += dead_add # Num of dead configurations found
@@ -118,7 +132,8 @@ def batch_phase_finder(size, dt, N_steps, batch_size, params_generator,
     return dead_params, alive_params
        
 @torch.no_grad()
-def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, num_channels=3, use_mean=True,device='cpu'):
+def interest_finder(size, dt, N_steps, p_dead:BatchParams, p_alive:BatchParams, refinement, threshold, 
+                    num_channels=3, use_mean=True,device='cpu') -> tuple[torch.Tensor,BatchParams]:
     """
         By dichotomy, finds the parameters of an interesting automaton. By interesting, here
         we mean a set of parameters which lies at the transition between an asymptotically dead
@@ -145,11 +160,11 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, n
     print('=====================================================')
     print('Computing dichotomy on found phases')
     print('=====================================================')
+    assert p_dead.batch_size==p_alive.batch_size, f'p_dead.batch_size ={p_dead.batch_size} and p_alive.batch_size={p_alive.batch_size} do not match'
     p_d = copy.deepcopy(p_dead)
     p_a = copy.deepcopy(p_alive)
 
-    batch_size = p_a['mu'].shape[0]
-    assert batch_size==p_d['mu'].shape[0], 'Batch sizes must match'
+    batch_size = p_a.batch_size
 
     t_crit = torch.full((batch_size,),0.5,device=device)
 
@@ -158,14 +173,13 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, n
 
     # print('Ksize : ', p_d['k_size'])
     for i in tqdm(range(refinement)):
-        mid_params = mean_params(p_d,p_a)
+        mid_params = (p_d+p_a)*.5
 
         auto.update_params(mid_params)
         auto.set_init_perlin()
 
         # print('Simulating...')
         mass_f = 0
-
         # t0 = time()
         for _ in range(N_steps):
             auto.step()
@@ -180,13 +194,10 @@ def interest_finder(size, dt, N_steps, p_dead, p_alive, refinement, threshold, n
         # print('Adjusting...')
         # print(f'Step {i} masses : {mass_f.mean(dim=1)}')
         # print(f'Step {i} deadmask : {dead_mask}')
-        for key,mid_param in mid_params.items():
-            if(key!='k_size'):
-                p_d[key][dead_mask] = mid_param[dead_mask] # Move dead point
-                p_a[key][~dead_mask] = mid_param[~dead_mask] # Move alive point
-                
-                t_crit[dead_mask] += 0.5**(i+2) # Move t_crit for dead
-                t_crit[~dead_mask] -= 0.5**(i+2) # Move t_crit for alive
+        p_d[dead_mask] = mid_params[dead_mask]
+        p_a[dead_mask] = mid_params[~dead_mask]
+        t_crit[dead_mask] += 0.5**(i+2) # Move t_crit for dead
+        t_crit[~dead_mask] -= 0.5**(i+2) # Move t_crit for alive
     # print('=====================================================')
     # # mid_params = p_a # Last push towards alive
     # print('dead at the end : ', dead_mask.sum().item()/batch_size)
@@ -244,6 +255,13 @@ def search_transition(save_folder:str, param_generator:callable, num_points, N_s
 
     threshold_e, threshold_i = thresholds
     mean_find, mean_search = use_means
+    
+    def _save_all(paramus):
+        paramus.save_indiv(folder=save_folder, batch_name=False)
+        if(batch_folder is not None):
+            paramus.save(folder=batch_folder)
+        paramus.save_indiv(folder=latest,batch_name=True)
+
     with torch.no_grad():
         t00 = time()
     
@@ -257,118 +275,77 @@ def search_transition(save_folder:str, param_generator:callable, num_points, N_s
             print(f'Searching for {batch_size} of each phase...')
             # find two batches of parameters (one dead one alive)
             params_d, params_a = \
-                batch_phase_finder((H,W), dt, N_steps, batch_size=batch_size,params_generator=param_generator, 
+                phase_finder((H,W), dt, N_steps, batch_size=batch_size,params_generator=param_generator, 
                                             threshold=threshold_e, num_channels=num_channels,num_examples=min(batch_size,num_each),
                                             use_mean=mean_find, device=device) 
             
             if(cross):
                 # Compute transition point between all pairs of parameters
-                params_d_list = param_batch_to_list(params_d,1,squeeze=False)
-                for param_d in params_d_list:
-                    param_d = expand_batch(param_d,params_a['mu'].shape[0])
+                for j in range(params_d.batch_size):
+                    param_d = params_d[j]
+                    param_d = params_d.expand(params_a.batch_size)
                     # Param_d has batch_size = 1, but will broadcast seamlessly when summing with params_a
                     _, mid_params = interest_finder((H,W), dt, N_steps, param_d, params_a, 
                                                                 refinement, threshold_i, device ,num_channels=num_channels,) 
-                    save_param(save_folder, mid_params, batch_folder=batch_folder)
+                    _save_all(mid_params)
             else:
                 _, mid_params = interest_finder((H,W), dt, N_steps, params_d, params_a, 
                                                                 refinement, threshold_i,use_mean=mean_search,device=device,num_channels=num_channels,)
-
-                save_param(save_folder, mid_params, batch_folder=batch_folder)
-                save_param(latest, mid_params, batch_folder=None)
+                _save_all(mid_params)
 
         print(f'Total time for {num_points} : {time()-t00}')
 
-def mean_params(p1,p2):
-    """
-        Returns the mean of two parameter dictionaries
-    """
-    assert p1['k_size']==p2['k_size'], 'Kernel sizes must match'
+# def param_batch_to_list(b_params,new_batch_size=1,squeeze=True):
+#     """
+#         Separates a batched parameter dictionary into a list of batched parameters, with a new batch_size.
+#         NOTE : Last element in the list might have a batch_size smaller than new_batch_size.
 
-    new_p = {'k_size' : p1['k_size']}
-    for key in p1:
-        if(key!='k_size'):
-            new_p[key] = (p2[key]+p1[key])/2.
+#         Args:
+#             b_params : batched parameters (dict)
+#             new_batch_size : new batch size (int)
+#             squeeze : if True, removes batch_size dimension if new_batch_size=1
+#         Returns:
+#             list of batched parameters list[dict]
+#     """
+#     if(new_batch_size>=b_params['mu'].shape[0] and not squeeze):
+#         return [b_params]
+
+#     batch_size = b_params['mu'].shape[0]
+#     param_list = []
+#     if(squeeze and new_batch_size!=1):
+#         squeeze=False
+
+#     for i in range(ceil(batch_size/new_batch_size)):
+#         param_list.append({'k_size' : b_params['k_size']})
+
+#         for key in b_params:
+#             if(key!='k_size'):
+#                 # Cut to (new_batch_size,*) and add to list
+#                 param_list[-1][key] = (b_params[key][i*new_batch_size:min((i+1)*new_batch_size,batch_size)])
+#                 if(squeeze):
+#                     param_list[-1][key] = param_list[-1][key].squeeze(0)
     
-    return new_p
+#     return param_list
 
-def param_batch_to_list(b_params,new_batch_size=1,squeeze=True):
-    """
-        Separates a batched parameter dictionary into a list of batched parameters, with a new batch_size.
-        NOTE : Last element in the list might have a batch_size smaller than new_batch_size.
+# def expand_batch(param,tar_batch):
+#     """
+#         Expands parameters of batch_size=1 to a target batch size.
+#         Args:
+#             param : batch of parameters (dict)
+#             tar_batch : target batch size (int)
+#         Returns:
+#             expanded batch of parameters (dict)
+#     """
+#     batch_size = param['mu'].shape[0]
+#     assert batch_size==1, 'original batch size must be 1'
 
-        Args:
-            b_params : batched parameters (dict)
-            new_batch_size : new batch size (int)
-            squeeze : if True, removes batch_size dimension if new_batch_size=1
-        Returns:
-            list of batched parameters list[dict]
-    """
-    if(new_batch_size>=b_params['mu'].shape[0] and not squeeze):
-        return [b_params]
-
-    batch_size = b_params['mu'].shape[0]
-    param_list = []
-    if(squeeze and new_batch_size!=1):
-        squeeze=False
-
-    for i in range(ceil(batch_size/new_batch_size)):
-        param_list.append({'k_size' : b_params['k_size']})
-
-        for key in b_params:
-            if(key!='k_size'):
-                # Cut to (new_batch_size,*) and add to list
-                param_list[-1][key] = (b_params[key][i*new_batch_size:min((i+1)*new_batch_size,batch_size)])
-                if(squeeze):
-                    param_list[-1][key] = param_list[-1][key].squeeze(0)
+#     new_param = {'k_size' : param['k_size']}
+#     for key in param:
+#         if(key!='k_size'):
+#             n_d = len(param[key].shape)-1
+#             new_param[key] = param[key].repeat(tar_batch,*([1]*n_d))
     
-    return param_list
-
-def expand_batch(param,tar_batch):
-    """
-        Expands parameters of batch_size=1 to a target batch size.
-        Args:
-            param : batch of parameters (dict)
-            tar_batch : target batch size (int)
-        Returns:
-            expanded batch of parameters (dict)
-    """
-    batch_size = param['mu'].shape[0]
-    assert batch_size==1, 'original batch size must be 1'
-
-    new_param = {'k_size' : param['k_size']}
-    for key in param:
-        if(key!='k_size'):
-            n_d = len(param[key].shape)-1
-            new_param[key] = param[key].repeat(tar_batch,*([1]*n_d))
-    
-    return new_param
-
-def save_param(folder,params, batch_folder=None, annotation=None):
-    """
-        Saves parameter both in batch and individually.
-
-        Args:
-        folder : path to folder where to save params individually
-        params : dictionary of parameters
-        batch_folder : if provided, will save also the batched parameters
-        annotation : list of same length as batch_size, an annotation of the parameters
-    """
-    name = params_to_words(params)
-    batch_size = params['mu'].shape[0]
-
-    if(batch_size>1 and batch_folder is not None):
-        torch.save(params,os.path.join(batch_folder,name+'.pt')) 
-
-    mid_params_list = param_batch_to_list(params) # Unbatched list of dicts
-    if(annotation is None):
-        annotation = [f'{j:02d}' for j in range(len(mid_params_list))]
-    else:
-        assert len(annotation)==len(mid_params_list), f'Annotation (len={len(annotation)}) must \
-        have same length as batch_size (len={len(mid_params_list)})'
-
-    for j in range(len(mid_params_list)):
-        torch.save(mid_params_list[j],os.path.join(folder,name+f'_{annotation[j]}'+'.pt'))
+#     return new_param
 
 def save_rand(folder,batch_size,num,num_channels,param_generator, batch_folder=None, device='cpu'):
     """
@@ -388,5 +365,7 @@ def save_rand(folder,batch_size,num,num_channels,param_generator, batch_folder=N
 
     for _ in range(num):
         params = param_generator(batch_size,num_channels=num_channels,device=device)
-        save_param(folder=folder,params=params, batch_folder=batch_folder)
+        params.save_indiv(folder, batch_name=True)
+        if(batch_folder is not None):
+            params.save(folder=batch_folder)
 

@@ -8,8 +8,6 @@ from typing import Dict, Set
 from nltk.corpus import wordnet as wn
 
 
-
-
 def fetch_nouns_and_adj_from_nltk():
     """
     this func is a one time call to download a database of nouns and adjectives to be stored as pickle files,
@@ -54,8 +52,6 @@ def fetch_nouns_and_adj_from_nltk():
     with open(noun_path, 'wb') as handle:
         pickle.dump(nouns, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-
-
 def params_to_words(state_dict: Dict[str, torch.Tensor], num_words: int = 2) -> str:
     """
     Convert neural network state dictionary into a deterministic sequence of words.
@@ -79,7 +75,7 @@ def params_to_words(state_dict: Dict[str, torch.Tensor], num_words: int = 2) -> 
     # Convert state dict to bytes for hashing
     param_bytes = b''
     for key in sorted(state_dict.keys()):  # Sort keys for deterministic ordering
-        if key == "k_size":
+        if not(isinstance(state_dict[key],torch.Tensor)):
             tohash = torch.tensor(state_dict[key])
         else:
             tohash = state_dict[key]
@@ -98,27 +94,3 @@ def params_to_words(state_dict: Dict[str, torch.Tensor], num_words: int = 2) -> 
         words.append(word_list[word_idx])
     
     return "_".join(words)
-
-
-def restore_params_to_names(source_dir, target_dir, num_words, device="cuda"):
-    """
-    goes through all files in source_dir and stores the renamed files into target_dir
-    """
-    os.makedirs(target_dir, exist_ok=True)
-    
-    for file in os.listdir(source_dir):
-        print(file)
-        dico = torch.load(os.path.join(source_dir,file), map_location=device, weights_only=True)
-        params = dict([key, val] for key, val in dico.items() if key != "k_size")
-        name = params_to_words(params, num_words)+".pt"
-        out_file = os.path.join(target_dir,name)
-        torch.save(dico, out_file)
-
-
-
-
-if __name__=='__main__':
-    #use case :
-    source_dir = "./data/remarkable/individual"
-    target_dir = "./forbara"
-    restore_params_to_names(source_dir, target_dir, num_words=2)

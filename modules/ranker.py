@@ -1,4 +1,4 @@
-from .utils.finder_utils import search_transition, save_param
+from .utils.finder_utils import search_transition
 from .utils.hash_params import params_to_words
 from .reward_training import VideoRewardTrainer
 from .Automaton import BatchLeniaMC
@@ -77,6 +77,7 @@ class Ranker():
                 params = param_generator(batch_size,
                                          search_params['num_channels'],
                                          device=search_params['device'])
+                params.save(folder=garbage_folder)
                 save_param(folder=garbage_folder,params=params, batch_folder=params_folder)
         
         print('Ranking candidates...')
@@ -115,7 +116,7 @@ class Ranker():
         B,H,W = (rank_batch_size, *search_params['rank_world_size'])
         # Generates the video tensors :
         simulator = BatchLeniaMC(size = (B,H,W) , num_channels=search_params['num_channels'],
-                                 device=search_params['device'], dt=search_params['dt'])
+                                 device=search_params['device'], dt=search_params['dt'], use_fft=True)
         return simulator
 
     def score_params(self, batch_params, simulator:BatchLeniaMC, repetitions=1):

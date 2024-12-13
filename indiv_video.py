@@ -1,10 +1,8 @@
 """
     Script to generate individual videos of the automaton, given saved parameters.
 """
-
-
 from showtens import save_video
-from modules import BatchLeniaMC
+from modules import BatchLeniaMC, LeniaParams
 import os
 from tqdm import tqdm
 import torch
@@ -31,7 +29,7 @@ param_names = [v.split('.')[0] for v in params]
 auto = BatchLeniaMC((1,*size),0.1,device=device)
 
 for i,p in tqdm(enumerate(params_paths),total=len(params_paths)):
-    auto.update_params(load_params(p,make_batch=True,device=device))
+    auto.update_params(LeniaParams(from_file=p,device=device))
     auto.set_init_perlin()
 
     v_tens = torch.zeros((1,simulation_time,3,*size),device=device)

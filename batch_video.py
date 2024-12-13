@@ -5,6 +5,7 @@
 
 from modules.utils.main_utils import load_params
 from modules.Automaton import BatchLeniaMC
+from modules.utils import LeniaParams
 import torch
 from torchenhanced.util import saveTensVideo, showTens, gridify
 import cv2,numpy as np
@@ -14,7 +15,8 @@ import torchvision.transforms as transf
 import os
 
 @torch.no_grad()
-def save_batch_video(batch_param_location,name,save_name,bunching=15, columns=5, out_size=1200):
+def save_batch_video(batch_param_location,name,save_name,bunching=15, columns=5, out_size=1200,
+                     device='cpu'):
     """
         Save video of a batch of parameters
 
@@ -29,12 +31,11 @@ def save_batch_video(batch_param_location,name,save_name,bunching=15, columns=5,
     save_fold = os.path.join('data/videos',save_name)
     os.makedirs(save_fold,exist_ok=True)
     output_file = os.path.join(save_fold,f"{name}.mp4")
+    
+    param = LeniaParams(from_file=batch_param_location, device=device)
+    batch_size = param.batch_size
 
-    param = load_params(batch_param_location, device='cuda:0') # Parameter file to load
-
-    batch_size = param['mu'].shape[0]
-
-    auto = BatchLeniaMC((batch_size,*size),0.1,param,device='cuda:0')
+    auto = BatchLeniaMC((param.batch_size,*size),dt=0.1,params=param,device=device)
     auto.set_init_perlin()
     B,C,H,W = auto.state.shape
     _,gH,gW = gridify(auto.state,out_size=out_size,columns=columns).shape
@@ -70,13 +71,7 @@ def save_batch_video(batch_param_location,name,save_name,bunching=15, columns=5,
             video.write(frame)
             record_times+=time()-t0
 
-    
-    # print('average step time : ',step_times)
-    # print('average transmute time : ',transmute_times)
-    # print('average record time : ',record_times)
-
     video.release()
-    # saveTensVideo(tensor_out,folderpath='.',name=name,fps=fps,out_size=1500,columns=5)
 
 if __name__=='__main__':
     ## PARAMETERS TO CHANGE

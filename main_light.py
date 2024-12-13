@@ -4,24 +4,19 @@
 import torch
 import pygame
 from modules.Camera import Camera
-from modules.Automaton import BatchLeniaMC
+from modules.LightLenia import LightLenia
 from modules.utils import LeniaParams
-from modules.utils.main_utils import compute_ker
+from modules.utils.main_utils import compute_ker, around_params
 from modules.utils.hash_params import params_to_words
 import cv2
 import pickle as pk
 from finder_script import param_generator
 import numpy as np, os, random
 #============================== PARAMETERS ==========================================================
-device = 'cuda' # Device on which to run the automaton
-W,H = 500,500 # Size of the automaton
+device = 'cpu' # Device on which to run the automaton
+W,H = 512,512 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
-
-interesting_dir = os.path.join('demo_params') # Directory containing the parameters to load when pressing 'm'
-# interesting_dir = os.path.join('data','latest_rand') # Directory containing the parameters to load when pressing 'm'
-
-remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
 #===========================DO NOT MODIFY BELOW THIS LINE===========================================
 
 param_gen = lambda dev: param_generator(1,num_channels=num_channels,device=dev)
@@ -29,23 +24,10 @@ param_gen = lambda dev: param_generator(1,num_channels=num_channels,device=dev)
 
 videos_dir = os.path.join('data','videos')
 
-
-os.makedirs(interesting_dir, exist_ok=True)
-os.makedirs(remarkable_dir, exist_ok=True)
 os.makedirs(videos_dir, exist_ok=True)
 
-interest_files = os.listdir(interesting_dir)
-
-if len(interest_files) > 0:
-    file = random.choice(interest_files)
-    params = LeniaParams(from_file=os.path.join(interesting_dir,file), device=device)
-    # params = load_params(os.path.join(interesting_dir,file), make_batch=True, device=device)
-else :
-    params = param_gen(device)
-    print('FUGG')
-
 # Initialize the automaton
-auto = BatchLeniaMC((1,H,W), dt, params=params, num_channels=num_channels, device=device, use_fft=True)
+auto = LightLenia((1,H,W), dt, params=None, num_channels=num_channels, device=device)
 # auto = DiscreteLenia((1,H,W), discretization=13, params=None ,device=device)
 auto.to(device)
 # auto.update_params(params)
@@ -80,8 +62,7 @@ launch_video = True
 
 counter = 0 # counter to get only the frames we want
 
-kern = compute_ker(auto, device)
-k_size_override = 32
+# kern = compute_ker(auto, device)
 while running:
     # poll for events
     # pygame.QUIT event means the user clicked X to close your window
@@ -90,17 +71,20 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         if event.type == pygame.KEYDOWN:
+            if(event.key == pygame.K_y):
+                auto = LightLenia((1,H,W), dt, params=None, num_channels=num_channels, device=device)
+                auto.to(device)
             if(event.key == pygame.K_n):
                 """ New random parameters"""
                 # params = param_gen(device)
                 params = auto.gen_batch_params(auto.device)
-                auto.update_params(params,k_size_override=k_size_override)
-                kern = compute_ker(auto, device) 
+                auto.update_params(params,k_size_override=None)
+                # kern = compute_ker(auto, device) 
             if(event.key == pygame.K_u):
                 """ Variate around parameters"""
-                params = params.mutate(magnitude=0.1,rate=0.8)
-                auto.update_params(params,k_size_override=k_size_override)
-                kern = compute_ker(auto, device) 
+                params = around_params(params, device)
+                auto.update_params(params,k_size_override=None)
+                # kern = compute_ker(auto, device) 
             if(event.key == pygame.K_i):
                 # Intialize with fractal perlin
                 auto.set_init_fractal()
@@ -109,25 +93,6 @@ while running:
                 # Initialize with perlin
                 auto.set_init_perlin()
                 n_steps=0
-            if(event.key == pygame.K_k):
-                # Initialize with random wavelength perlin
-                sq_size = random.randint(5,min(W,H))
-                auto.set_init_perlin(wavelength=sq_size)
-            if(event.key == pygame.K_m):
-                # Load random interesting param
-                n_steps=0
-                file = interest_files[chosen_interesting]
-                chosen_interesting = (chosen_interesting+1)%len(interest_files)
-
-                # params = load_params(os.path.join(interesting_dir,file),make_batch=True,device=device)
-                params = LeniaParams(from_file=os.path.join(interesting_dir,file), device=device)
-                auto.update_params(params,k_size_override=k_size_override)
-                kern = compute_ker(auto, device) 
-            if(event.key == pygame.K_s):
-                # Save the current parameters to remarkable dir :
-                para = auto.get_params()
-                name = params_to_words(para)
-                torch.save(para,os.path.join(remarkable_dir,'nice_'+name+'.pt'))
             if(event.key == pygame.K_p):
                 # Toggle pause
                 updating=not updating
@@ -157,11 +122,6 @@ while running:
     
     #Retrieve the world_state from automaton
     world_state = auto.worldmap
-    # Display kernel not updated for now
-    if display_kernel == True:
-        world_state[:auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[0].cpu()
-        world_state[auto.k_size:2*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[1].cpu()  
-        world_state[2*auto.k_size:3*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[2].cpu()  
 
     #Make the viewable surface.
     surface = pygame.surfarray.make_surface(world_state)
