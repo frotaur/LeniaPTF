@@ -2,7 +2,6 @@ import torch,torch.nn,torch.nn.functional as F
 import numpy as np
 from torchenhanced import DevModule
 from .utils.noise_gen import perlin,perlin_fractal
-from .utils.main_utils import gen_batch_params
 from .utils.leniaparams import LeniaParams
 from showtens import show_image
 
@@ -48,13 +47,6 @@ class LightLenia(DevModule):
         self.k_size = self.params['k_size'] # kernel sizes (same for all) ODD for conv2d, even for fft
         self.light_k_size = self.k_size*5
 
-        if(self.h%2==1):
-            self.h += 1
-            print(f'Increased image size to even for fft {self.h}x{self.w}')
-        if(self.w%2==1):
-            self.w += 1
-            print(f'Increased image size to even for fft {self.h}x{self.w}')
-    
         self.register_buffer('matter',torch.rand((self.batch,self.C-1,self.h,self.w)))
         self.register_buffer('light',torch.rand((self.batch,1,self.h,self.w)))
 
@@ -107,9 +99,14 @@ class LightLenia(DevModule):
         self.sigma_k = matter_params.get('sigma_k',self.sigma_k)
         self.weights = matter_params.get('weights',self.weights)
         self.k_size = matter_params.get('k_size',self.k_size) # kernel sizes (same for all)
-
+        
+        if(k_size_override is not None):
+            self.k_size = k_size_override
+        if(self.k_size%2==0):
+                self.k_size += 1
+                print(f'Using fft, increased even kernel size to {self.k_size}')
         # light params
-        self.light_mu = light_params.get('light_mu',self.light_mu)
+        self.light_mu = light_params.get('liht_mu',self.light_mu)
         self.light_sigma = light_params.get('light_sigma',self.light_sigma)
         self.light_mu_k = light_params.get('light_mu_k',self.light_mu_k)
         self.light_sigma_k = light_params.get('light_sigma_k',self.light_sigma_k)
@@ -117,12 +114,7 @@ class LightLenia(DevModule):
         # Light-matter interaction
         self.light_to_matter = light_params.get('light_to_matter',self.light_to_matter)	
         self.matter_to_light = light_params.get('matter_to_light',self.matter_to_light)
-
-        if(k_size_override is not None):
-            self.k_size = k_size_override
-            if(self.k_size%2==1):
-                self.k_size += 1
-                print(f'Using fft, increased odd kernel size to {self.k_size}')
+    
 
         self.params = LeniaParams(param_dict=matter_params, device=self.device)
 
@@ -223,6 +215,8 @@ class LightLenia(DevModule):
         # Avoid divisions by 0
         summed = torch.where(summed<1e-6,1,summed)
         K /= summed
+        Kshow = torch.cat([K, torch.zeros_like(K)[:,:,0:1]], dim=2)
+        # show_image(Kshow,rescale=True)
 
         return K #(B,C,C,k_size,k_size)
     
@@ -251,11 +245,16 @@ class LightLenia(DevModule):
     def kernel_to_fft(self, K):
         # Pad kernel to match image size
         k_size = K.shape[-1]
-        K = F.pad(K, [(self.h-k_size)//2]*2 + [(self.w-k_size)//2]*2) # (B,C,C,h,w)
+        # Pad kernel to match image size
+        # For some reason, pad is left-right, top-bottom, (so W,H)
+        K = F.pad(K, [0,(self.w-k_size)] + [0,(self.h-k_size)]) # (B,C,C,h,w)
+        print('Padded kenel, shape : ', K.shape)
+        # show_image(K,rescale=True)
         # Center the kernel on the top left corner for fft
-        K = K.roll((self.h//2,self.w//2),dims=(-1,-2)) # (B,C,C,h,w)
-
+        K = K.roll((-(k_size//2),-(k_size//2)),dims=(-1,-2)) # (B,C,C,h,w)
+        # show_image(K,rescale=True)
         K = torch.fft.fft2(K) # (B,C,C,h,w)
+        # show_image(torch.cat([torch.abs(K),torch.angle(K)],dim=0),rescale=True)
 
         return K #(B,C,C,h,w)
 

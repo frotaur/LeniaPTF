@@ -62,7 +62,7 @@ def param_generator(batch_size, num_channels = 3,device='cpu') -> LeniaParams:
             'beta' : torch.rand((batch_size,num_channels,num_channels,3), device=device), 
             # Means of kernel gaussians (3 rings * 3 channels * 3 channels)
             # 'mu_k' : torch.clamp(0.5+0.3*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=0.,max=1.), 
-            'mu_k' : torch.clamp(0.5+0.2*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=0.,max=1.2), 
+            'mu_k' : 0.5+0.2*torch.randn((batch_size,num_channels,num_channels,3), device=device),
             # Stds of kernel gaussians (3 rings * 3 channels * 3 channels)
             'sigma_k' : 0.05*(1+torch.clamp(0.3*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=-0.9)+1e-4),
             # Weighing of growth functions contribution to each channel

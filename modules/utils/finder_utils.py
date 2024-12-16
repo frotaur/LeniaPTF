@@ -35,7 +35,7 @@ def phase_finder(size, dt, N_steps, batch_size, params_generator,
     found_a = False
     H,W = size
 
-    auto = BatchLeniaMC((batch_size,*size), dt, num_channels=num_channels, device=device)
+    auto = BatchLeniaMC((batch_size,*size), dt, num_channels=num_channels, device=device, use_fft=True)
     auto.to(device)
 
     if(num_examples is None):
@@ -45,8 +45,8 @@ def phase_finder(size, dt, N_steps, batch_size, params_generator,
     alive_params = None
     params = params_generator(batch_size,num_channels=num_channels,device=device)
 
-    dead_params['k_size'] = params['k_size']
-    alive_params['k_size'] = params['k_size']
+    # dead_params.k_size = params['k_size']
+    # alive_params.k_size = params['k_size']
 
     n_dead = 0
     n_alive = 0
@@ -168,7 +168,7 @@ def interest_finder(size, dt, N_steps, p_dead:BatchParams, p_alive:BatchParams, 
 
     t_crit = torch.full((batch_size,),0.5,device=device)
 
-    auto = BatchLeniaMC((batch_size,*size), dt , num_channels=num_channels, device=device)
+    auto = BatchLeniaMC((batch_size,*size), dt , num_channels=num_channels, device=device, use_fft=True)
     auto.to(device)
 
     # print('Ksize : ', p_d['k_size'])
@@ -195,7 +195,7 @@ def interest_finder(size, dt, N_steps, p_dead:BatchParams, p_alive:BatchParams, 
         # print(f'Step {i} masses : {mass_f.mean(dim=1)}')
         # print(f'Step {i} deadmask : {dead_mask}')
         p_d[dead_mask] = mid_params[dead_mask]
-        p_a[dead_mask] = mid_params[~dead_mask]
+        p_a[~dead_mask] = mid_params[~dead_mask]
         t_crit[dead_mask] += 0.5**(i+2) # Move t_crit for dead
         t_crit[~dead_mask] -= 0.5**(i+2) # Move t_crit for alive
     # print('=====================================================')

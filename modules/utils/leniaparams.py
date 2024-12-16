@@ -119,7 +119,8 @@ class BatchParams():
             if(not isinstance(self.param_dict[key], torch.Tensor)):
                 # Assume non-tensor parameters are not to be multiplied
                 new_params[key] = self.param_dict[key]
-            new_params[key] = self.param_dict[key]*scalar
+            else:
+                new_params[key] = self.param_dict[key]*scalar
         
         return type(self)(param_dict=new_params,device=self.device)
 
@@ -127,7 +128,7 @@ class BatchParams():
         return self.__mul__(scalar)
     
     def __truediv__(self, scalar: float)-> 'BatchParams':
-        return self.__mul__(1/scalar)
+        return self.__mul__(1./scalar)
 
     def __getitem__(self, idx):
         """
@@ -150,6 +151,29 @@ class BatchParams():
     
         return type(self)(params,device=self.device)
 
+    def __setitem__(self, idx, value):
+        """
+            Works as a dictionary, setting the parameters with strings, or
+            as advanced indexing on the batch dimension, like in pytorch.
+            Will ALWAYS keep at least one dimension for the batch size.
+            In other words,params[1] is the same as params[1:2]
+        """
+        if(isinstance(idx, str)):
+            self.__setattr__(idx, value)
+        else:
+            # if idx is not a string, we assume value is BatchParams
+            assert isinstance(value, BatchParams), 'Can only setitem with BatchParams when using advanced indexing'
+            assert value.param_dict.keys() == self.param_dict.keys(), 'Keys of the two BatchParams do not match'
+            if(isinstance(idx, int)):
+                idx = slice(idx,idx+1)
+        
+        # Else, assume its some advanced pytorch indexing
+        for k,v in value.param_dict.items():
+            if(not isinstance(v, torch.Tensor)):
+                self.__setattr__(k, v)
+            else:
+                self.param_dict[k][idx] = v
+    
     def __add__(self, other : 'BatchParams')-> 'BatchParams':
         """
             Adds two sets of parameters together.
@@ -161,7 +185,8 @@ class BatchParams():
             if(not isinstance(self.param_dict[key], torch.Tensor)):
                 assert self.param_dict[key] == other.param_dict[key], f'Non-tensor parameters do not match for key {key}'
                 new_params[key] = self.param_dict[key]
-            new_params[key] = self.param_dict[key] + other.param_dict[key]
+            else:
+                new_params[key] = self.param_dict[key] + other.param_dict[key]
         
         return type(self)(param_dict=new_params,device=self.device)
 
@@ -244,7 +269,8 @@ class LeniaParams(BatchParams):
         """
         if(param_dict is None and from_file is None):
             assert k_size is not None and batch_size is not None, 'k_size and batch_size must be provided if no parameters are given'
-            param_dict = self.default_gen(num_channels=channels,k_size=k_size).param_dict # dis very ugly but not sure how to do it better
+
+            param_dict = LeniaParams.default_gen(batch_size=batch_size,num_channels=channels,k_size=k_size,device=device).param_dict # dis very ugly but not sure how to do it better
             super().__init__(param_dict=param_dict,device=device)
         else:
             super().__init__(param_dict=param_dict,from_file=from_file,batch_size=batch_size,device=device)
@@ -261,13 +287,13 @@ class LeniaParams(BatchParams):
         """
         self.mu = torch.clamp(self.mu,0,2)
         self.sigma = torch.clamp(self.sigma,0,None)
-        self.beta = torch.clamp(self.beta,0,1)
+        # self.beta = torch.clamp(self.beta,0,1)
         self.mu_k = torch.clamp(self.mu_k,0,2)
         self.sigma_k = torch.clamp(self.sigma_k,0,None)
         self.weights = torch.clamp(self.weights,0,None)
 
-    
-    def default_gen(self,num_channels = 3, k_size=None):
+    @staticmethod
+    def default_gen(batch_size, num_channels = 3, k_size=None, device='cpu'):
         """
 
             Args:
@@ -277,17 +303,17 @@ class LeniaParams(BatchParams):
             Returns:
                 dict of batched parameters
         """
-        mu = 0.7*torch.rand((self.batch_size,num_channels,num_channels), device=self.device) 
-        sigma = mu/(math.sqrt(2*math.log(2)))*0.8*torch.rand((self.batch_size,num_channels,num_channels), device=self.device)+1e-4
+        mu = 0.7*torch.rand((batch_size,num_channels,num_channels), device=device) 
+        sigma = mu/(math.sqrt(2*math.log(2)))*0.8*torch.rand((batch_size,num_channels,num_channels), device=device)+1e-4
         
         params = {
-                'k_size' : k_size if k_size is not None else self.k_size, 
+                'k_size' : k_size if k_size is not None else k_size, 
                 'mu':  mu ,
                 'sigma' : sigma,
-                'beta' : torch.rand((self.batch_size,num_channels,num_channels,3), device=self.device), 
-                'mu_k' : torch.clamp(0.5+0.2*torch.randn((self.batch_size,num_channels,num_channels,3), device=self.device),min=0.,max=1.2), 
-                'sigma_k' : 0.05*(1+torch.clamp(0.3*torch.randn((self.batch_size,num_channels,num_channels,3), device=self.device),min=-0.9)+1e-4),
-                'weights' : torch.rand(self.batch_size,num_channels,num_channels,device=self.device)*(1-0.8*torch.diag(torch.ones(num_channels,device=self.device)))
+                'beta' : torch.rand((batch_size,num_channels,num_channels,3), device=device), 
+                'mu_k' : torch.clamp(0.5+0.2*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=0.,max=1.2), 
+                'sigma_k' : 0.05*(1+torch.clamp(0.3*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=-0.9)+1e-4),
+                'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.8*torch.diag(torch.ones(num_channels,device=device)))
             }
         
         return LeniaParams(params)

@@ -93,7 +93,7 @@ def compute_ker(auto, device):
     """
     kern= auto.compute_kernel()[0] # (C,C, k_size, k_size)
     print('Kern shape : ', kern.shape)
-    show_image(kern,rescale=True)
+    # show_image(kern,rescale=True)
     if(kern.shape[1]==1):
         kern = kern.expand(3,3,-1,-1)
     elif(kern.shape[1]>3):

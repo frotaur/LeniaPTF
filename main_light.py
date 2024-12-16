@@ -6,7 +6,7 @@ import pygame
 from modules.Camera import Camera
 from modules.LightLenia import LightLenia
 from modules.utils import LeniaParams
-from modules.utils.main_utils import compute_ker, around_params
+from modules.utils.main_utils import compute_ker
 from modules.utils.hash_params import params_to_words
 import cv2
 import pickle as pk
@@ -78,11 +78,6 @@ while running:
                 """ New random parameters"""
                 # params = param_gen(device)
                 params = auto.gen_batch_params(auto.device)
-                auto.update_params(params,k_size_override=None)
-                # kern = compute_ker(auto, device) 
-            if(event.key == pygame.K_u):
-                """ Variate around parameters"""
-                params = around_params(params, device)
                 auto.update_params(params,k_size_override=None)
                 # kern = compute_ker(auto, device) 
             if(event.key == pygame.K_i):

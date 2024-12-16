@@ -14,11 +14,11 @@ from finder_script import param_generator
 import numpy as np, os, random
 #============================== PARAMETERS ==========================================================
 device = 'cuda' # Device on which to run the automaton
-W,H = 500,500 # Size of the automaton
+W,H = 512,512 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
 
-interesting_dir = os.path.join('demo_params') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('data','latest') # Directory containing the parameters to load when pressing 'm'
 # interesting_dir = os.path.join('data','latest_rand') # Directory containing the parameters to load when pressing 'm'
 
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
@@ -81,7 +81,7 @@ launch_video = True
 counter = 0 # counter to get only the frames we want
 
 kern = compute_ker(auto, device)
-k_size_override = 32
+k_size_override = None
 while running:
     # poll for events
     # pygame.QUIT event means the user clicked X to close your window
@@ -93,7 +93,7 @@ while running:
             if(event.key == pygame.K_n):
                 """ New random parameters"""
                 # params = param_gen(device)
-                params = auto.gen_batch_params(auto.device)
+                params = LeniaParams(batch_size=1,device=device,k_size=31)
                 auto.update_params(params,k_size_override=k_size_override)
                 kern = compute_ker(auto, device) 
             if(event.key == pygame.K_u):
@@ -126,8 +126,7 @@ while running:
             if(event.key == pygame.K_s):
                 # Save the current parameters to remarkable dir :
                 para = auto.get_params()
-                name = params_to_words(para)
-                torch.save(para,os.path.join(remarkable_dir,'nice_'+name+'.pt'))
+                para.save_indiv(remarkable_dir,annotation=['_nice'])
             if(event.key == pygame.K_p):
                 # Toggle pause
                 updating=not updating

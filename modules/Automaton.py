@@ -46,13 +46,6 @@ class BatchLeniaMC(DevModule):
             self.params = params
         
         self.k_size = self.params['k_size'] # kernel sizes (same for all) ODD for conv2d, even for fft
-        if(use_fft):
-            if(self.h%2==1):
-                self.h += 1
-                print(f'Increased image size to even for fft {self.h}x{self.w}')
-            if(self.w%2==1):
-                self.w += 1
-                print(f'Increased image size to even for fft {self.h}x{self.w}')
         self.register_buffer('state',torch.rand((self.batch,self.C,self.h,self.w)))
 
         if(state_init is None):
@@ -99,14 +92,10 @@ class BatchLeniaMC(DevModule):
 
         if(k_size_override is not None):
             self.k_size = k_size_override
-        if(self.use_fft):
-            if(self.k_size%2==1):
-                self.k_size += 1
-                print(f'Using fft, increased odd kernel size to {self.k_size}')
-        else:
-            if(self.k_size%2==0):
-                self.k_size += 1
-            print(f'Using conv2d, increased even kernel size to {self.k_size}')
+
+        if(self.k_size%2==0):
+            self.k_size += 1
+            print(f'Increased even kernel size to {self.k_size} to be odd')
 
         self.params = LeniaParams(param_dict=params, device=self.device)
 
@@ -197,22 +186,17 @@ class BatchLeniaMC(DevModule):
         return K #(B,C,C,k_size,k_size)
     
     def kernel_to_fft(self, K):
-
         # Pad kernel to match image size
-        K = F.pad(K, [(self.h-self.k_size)//2]*2 + [(self.w-self.k_size)//2]*2) # (B,C,C,h,w)
-        # print('Padded kernel')
+        # For some reason, pad is left-right, top-bottom, (so W,H)
+        K = F.pad(K, [0,(self.w-self.k_size)] + [0,(self.h-self.k_size)]) # (B,C,C,h,w)
         # show_image(K,rescale=True)
         # Center the kernel on the top left corner for fft
-        K = K.roll((self.h//2,self.w//2),dims=(-1,-2)) # (B,C,C,h,w)
-        K_comp = K.clone()
-        # print('centered kernel')
-        show_image(K, rescale=True)
+        K = K.roll((-(self.k_size//2),-(self.k_size//2)),dims=(-1,-2)) # (B,C,C,h,w)
+
+        # show_image(K,rescale=True)
         K = torch.fft.fft2(K) # (B,C,C,h,w)
-        # print('fouried kernel')
         # show_image(torch.cat([torch.abs(K),torch.angle(K)],dim=0),rescale=True)
 
-        de_K = torch.fft.ifft2(K)
-        print('de_fouried kernel vs original', torch.max((de_K-K_comp).abs()))
         return K #(B,C,C,h,w)
 
     def growth(self, u): # u:(B,C,C,H,W)
@@ -277,6 +261,7 @@ class BatchLeniaMC(DevModule):
         state = torch.fft.ifft2(state) # (B,C,C,H,W), back to spatial domain
 
         return torch.real(state)
+
 
     def mass(self):
         """
