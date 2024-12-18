@@ -4,7 +4,7 @@
 
 
 from modules.utils.main_utils import load_params
-from modules.Automaton import BatchLeniaMC
+from modules.Lenia import BatchLeniaMC
 from modules.utils import LeniaParams
 import torch
 from torchenhanced.util import saveTensVideo, showTens, gridify

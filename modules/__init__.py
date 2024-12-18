@@ -1,4 +1,5 @@
-from .Automaton import BatchLeniaMC
+from .Lenia import BatchLeniaMC
+from .DiffusionLenia import DiffusionLenia
 from .Camera import Camera
 from .ranker import Ranker
 from .genetic import GeneticEvolver

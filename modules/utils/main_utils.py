@@ -102,5 +102,5 @@ def compute_ker(auto, device):
     maxs = torch.tensor((torch.max(kern[0]), torch.max(kern[1]), torch.max(kern[2])), device=device)
     # print(maxs)
     maxs = maxs[:,None,None,None]
-    kern /= maxs 
+    kern = kern/maxs 
     return kern # (C,k_size,k_size,C)

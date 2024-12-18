@@ -1,5 +1,5 @@
 import torch
-from ..Automaton import BatchLeniaMC
+from ..Lenia import BatchLeniaMC
 from time import time
 import copy, os, shutil, math
 from tqdm import tqdm

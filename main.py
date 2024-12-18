@@ -4,7 +4,7 @@
 import torch
 import pygame
 from modules.Camera import Camera
-from modules.Automaton import BatchLeniaMC
+from modules import BatchLeniaMC, DiffusionLenia
 from modules.utils import LeniaParams
 from modules.utils.main_utils import compute_ker
 from modules.utils.hash_params import params_to_words
@@ -18,7 +18,7 @@ W,H = 512,512 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
 
-interesting_dir = os.path.join('data','latest') # Directory containing the parameters to load when pressing 'm'
+interesting_dir = os.path.join('demo_params') # Directory containing the parameters to load when pressing 'm'
 # interesting_dir = os.path.join('data','latest_rand') # Directory containing the parameters to load when pressing 'm'
 
 remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
@@ -46,6 +46,7 @@ else :
 
 # Initialize the automaton
 auto = BatchLeniaMC((1,H,W), dt, params=params, num_channels=num_channels, device=device, use_fft=True)
+auto = DiffusionLenia((1,H,W), dt, num_channels=num_channels,device=device)
 # auto = DiscreteLenia((1,H,W), discretization=13, params=None ,device=device)
 auto.to(device)
 # auto.update_params(params)
@@ -93,9 +94,10 @@ while running:
             if(event.key == pygame.K_n):
                 """ New random parameters"""
                 # params = param_gen(device)
-                params = LeniaParams(batch_size=1,device=device,k_size=31)
+                params = LeniaParams.random_gen(batch_size=1,num_channels=num_channels,device=device,k_size=31)
                 auto.update_params(params,k_size_override=k_size_override)
                 kern = compute_ker(auto, device) 
+                n_steps=0
             if(event.key == pygame.K_u):
                 """ Variate around parameters"""
                 params = params.mutate(magnitude=0.1,rate=0.8)
@@ -108,6 +110,9 @@ while running:
             if(event.key == pygame.K_j):
                 # Initialize with perlin
                 auto.set_init_perlin()
+                n_steps=0
+            if(event.key == pygame.K_c):
+                auto.set_init_circle()
                 n_steps=0
             if(event.key == pygame.K_k):
                 # Initialize with random wavelength perlin
@@ -139,6 +144,12 @@ while running:
                 if(not launch_video):
                     video_out.release()
                     launch_video = True 
+            if(event.key == pygame.K_UP):
+                if(hasattr(auto,'temp')):
+                    auto.temp +=0.2
+            if(event.key == pygame.K_DOWN):
+                if(hasattr(auto,'temp')):
+                    auto.temp -=0.2
             if(event.key == pygame.K_DELETE):
                 # sets state to 0
                 auto.state = torch.zeros_like(auto.state)
@@ -164,6 +175,8 @@ while running:
 
     #Make the viewable surface.
     surface = pygame.surfarray.make_surface(world_state)
+    mass_text = font.render(f'Total Mass: {auto.mass().sum().item():.2f} Temp : {auto.temp:.2f} MassMax : {auto.state.max():.2f}', True, (255, 255, 255))
+    surface.blit(mass_text, (10, 10))
 
     if(recording):
         if(launch_video):

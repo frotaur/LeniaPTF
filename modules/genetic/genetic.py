@@ -1,5 +1,5 @@
 import torch
-from ..Automaton import BatchLeniaMC
+from ..Lenia import BatchLeniaMC
 from modules import Ranker
 from ..utils import LeniaParams
 import json

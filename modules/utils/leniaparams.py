@@ -311,13 +311,37 @@ class LeniaParams(BatchParams):
                 'mu':  mu ,
                 'sigma' : sigma,
                 'beta' : torch.rand((batch_size,num_channels,num_channels,3), device=device), 
-                'mu_k' : torch.clamp(0.5+0.2*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=0.,max=1.2), 
+                'mu_k' : 0.5+0.2*torch.randn((batch_size,num_channels,num_channels,3), device=device), 
                 'sigma_k' : 0.05*(1+torch.clamp(0.3*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=-0.9)+1e-4),
                 'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.8*torch.diag(torch.ones(num_channels,device=device)))
             }
         
-        return LeniaParams(params)
+        return LeniaParams(params,device=device)
 
-
+    @staticmethod
+    def random_gen(batch_size, num_channels = 3, k_size=None, device='cpu'):
+        """
+            Full random generation
+            Args:
+                batch_size : number of parameters to generate
+                device : device on which to generate the parameters
+            
+            Returns:
+                dict of batched parameters
+        """
+        mu = torch.rand((batch_size,num_channels,num_channels), device=device) 
+        sigma = torch.rand((batch_size,num_channels,num_channels), device=device)+1e-4
+        
+        params = {
+                'k_size' : k_size if k_size is not None else k_size, 
+                'mu':  mu ,
+                'sigma' : sigma,
+                'beta' : torch.rand((batch_size,num_channels,num_channels,3), device=device), 
+                'mu_k' : torch.rand((batch_size,num_channels,num_channels,3), device=device),
+                'sigma_k' : 0.05*(1+torch.clamp(0.3*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=-0.9)+1e-4),
+                'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.8*torch.diag(torch.ones(num_channels,device=device)))
+            }
+        
+        return LeniaParams(params, device=device)
 if __name__=='__main__':
     test = LeniaParams(batch_size=1, k_size=21)

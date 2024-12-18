@@ -39,7 +39,7 @@ class BatchLeniaMC(DevModule):
 
         if(params is None):
             # Generates random parameters
-            self.params = LeniaParams(batch_size=self.batch, k_size=25, device=device)
+            self.params = LeniaParams(batch_size=self.batch, k_size=25,channels=self.C, device=device)
         elif(isinstance(params,dict)):
             self.params = LeniaParams(param_dict=params, device=device)
         else:
@@ -139,7 +139,20 @@ class BatchLeniaMC(DevModule):
             wavelength = self.k_size
         self.state = perlin((self.batch,self.h,self.w),[wavelength]*2,
                             device=self.device,num_channels=self.C,black_prop=0.25)
-        
+    
+    def set_init_circle(self,fractal=False, radius=None):
+        if(radius is None):
+            radius = self.k_size*3
+        if(fractal):
+            self.state = perlin_fractal((self.batch,self.h,self.w),int(self.k_size*1.5),
+                                    device=self.device,black_prop=0.25,num_channels=self.C,persistence=0.4)
+        else:
+            self.state = perlin((self.batch,self.h,self.w),[self.k_size]*2,
+                            device=self.device,num_channels=self.C,black_prop=0.25)
+        X,Y = torch.meshgrid(torch.linspace(-self.h//2,self.h//2,self.h,device=self.device),torch.linspace(-self.w//2,self.w//2,self.w,device=self.device))
+        R = torch.sqrt(X**2+Y**2)
+        self.state = torch.where(R<radius,self.state,torch.zeros_like(self.state,device=self.device))
+
     def kernel_slice(self, r):
         """
             Given a distance matrix r, computes the kernel of the automaton.
@@ -164,7 +177,8 @@ class BatchLeniaMC(DevModule):
 
         
         return K #(B,C,C,k_size, k_size)
-    
+
+
     def compute_kernel(self):
         """
             Computes the kernel given the current parameters.
@@ -225,7 +239,7 @@ class BatchLeniaMC(DevModule):
         else:
             U = self.get_conv(self.state)
 
-        assert (self.h,self.w) == (self.state.shape[2], self.state.shape[3])
+        assert (self.h,self.w) == (U.shape[-2], U.shape[-1])
 
         weights = self.weights[...,None, None] # (B,C,C,1,1)
         weights = weights.expand(-1,-1, -1, self.h,self.w) # (B,C,C,H,W)

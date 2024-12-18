@@ -1,7 +1,7 @@
 from .utils.finder_utils import search_transition
 from .utils.hash_params import params_to_words
 from .reward_training import VideoRewardTrainer
-from .Automaton import BatchLeniaMC
+from .Lenia import BatchLeniaMC
 import torch, os, shutil
 import json
 from tqdm import tqdm
